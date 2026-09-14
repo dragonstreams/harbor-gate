@@ -8,7 +8,7 @@ export type EmbyPolicy = {
   EnableContentDownloading?: boolean;
   EnableSyncTranscoding?: boolean;
   EnablePublicSharing?: boolean;
-  AllowSharingPersonalData?: boolean;
+  AllowSharingPersonalItems?: boolean;
   EnableRemoteControlOfOtherUsers?: boolean;
   EnableLiveTvAccess?: boolean;
   EnableLiveTvManagement?: boolean;
