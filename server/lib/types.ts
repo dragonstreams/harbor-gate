@@ -5,8 +5,12 @@ export type EmbyPolicy = {
   EnableAllChannels?: boolean;
   EnableAllFolders?: boolean;
   EnableContentDeletion?: boolean;
+  EnableContentDownloading?: boolean;
+  EnableSyncTranscoding?: boolean;
+  EnablePublicSharing?: boolean;
   EnableRemoteControlOfOtherUsers?: boolean;
   EnableLiveTvManagement?: boolean;
+  SimultaneousStreamLimit?: number;
   [key: string]: unknown;
 };
 

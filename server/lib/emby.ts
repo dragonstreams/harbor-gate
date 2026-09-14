@@ -43,6 +43,13 @@ export async function createUser(token: string, name: string) {
   return embyFetch<EmbyUser>(token, `/Users/New?Name=${encodeURIComponent(name)}`, { method: "POST" });
 }
 
+export async function setUserPassword(token: string, userId: string, password: string) {
+  return embyFetch<void>(token, `/Users/${encodeURIComponent(userId)}/Password`, {
+    method: "POST",
+    body: JSON.stringify({ NewPw: password, ResetPassword: false }),
+  });
+}
+
 export async function updateUser(token: string, user: EmbyUser, name: string, policy: EmbyPolicy) {
   if (name !== user.Name) {
     await embyFetch<void>(token, `/Users/${encodeURIComponent(user.Id)}`, {

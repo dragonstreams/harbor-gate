@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useState } from "react";
-import { CalendarDays, Loader2, ShieldCheck, UserPlus } from "lucide-react";
+import { CalendarDays, Download, KeyRound, Loader2, Radio, Share2, ShieldCheck, UserPlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -12,7 +12,7 @@ interface UserDialogProps {
   open: boolean;
   user: EmbyUser | null;
   onOpenChange: (open: boolean) => void;
-  onSave: (payload: { operation: "create" | "update"; id?: string; name: string; expiration: string | null; policy?: UserPolicy }) => Promise<void>;
+  onSave: (payload: { operation: "create" | "update"; id?: string; name: string; password?: string; maxSimultaneousStreams?: number; expiration: string | null; policy?: UserPolicy }) => Promise<void>;
 }
 
 const policyOptions: { key: keyof UserPolicy; label: string; description: string }[] = [
@@ -33,12 +33,16 @@ function toDateValue(value: string | null) {
 
 export function UserDialog({ open, user, onOpenChange, onSave }: UserDialogProps) {
   const [name, setName] = useState("");
+  const [password, setPassword] = useState("");
+  const [maxStreams, setMaxStreams] = useState("1");
   const [expiration, setExpiration] = useState("");
   const [policy, setPolicy] = useState<UserPolicy>({});
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     setName(user?.Name ?? "");
+    setPassword("");
+    setMaxStreams("1");
     setExpiration(toDateValue(user?.expiration ?? null));
     setPolicy(user?.Policy ?? { EnableAllDevices: true, EnableAllFolders: true, EnableAllChannels: true, IsDisabled: false });
   }, [user, open]);
@@ -51,6 +55,8 @@ export function UserDialog({ open, user, onOpenChange, onSave }: UserDialogProps
         operation: user ? "update" : "create",
         id: user?.Id,
         name,
+        password: user ? undefined : password,
+        maxSimultaneousStreams: user ? undefined : Number(maxStreams),
         expiration: expiration ? new Date(`${expiration}T23:59:59`).toISOString() : null,
         policy: user ? policy : undefined,
       });
@@ -71,9 +77,12 @@ export function UserDialog({ open, user, onOpenChange, onSave }: UserDialogProps
           </DialogHeader>
           <div className="space-y-6 px-6 py-6">
             <div className="grid gap-5 sm:grid-cols-2">
-              <div className="space-y-2"><Label htmlFor="profile-name">Profile name</Label><Input id="profile-name" value={name} onChange={(event) => setName(event.target.value)} required maxLength={100} className="h-11 rounded-xl focus-visible:ring-[#0F9F8F]" placeholder="e.g. Alex" /></div>
+              <div className="space-y-2"><Label htmlFor="profile-name">{user ? "Profile name" : "Username"}</Label><Input id="profile-name" value={name} onChange={(event) => setName(event.target.value)} required maxLength={100} autoComplete={user ? "off" : "username"} className="h-11 rounded-xl focus-visible:ring-[#0F9F8F]" placeholder={user ? "e.g. Alex" : "Choose a username"} /></div>
+              {!user && <div className="space-y-2"><Label htmlFor="profile-password">Password</Label><div className="relative"><KeyRound className="absolute left-3 top-3.5 h-4 w-4 text-slate-400" /><Input id="profile-password" type="password" value={password} onChange={(event) => setPassword(event.target.value)} required minLength={4} maxLength={200} autoComplete="new-password" className="h-11 rounded-xl pl-10 focus-visible:ring-[#0F9F8F]" placeholder="At least 4 characters" /></div></div>}
               <div className="space-y-2"><Label htmlFor="expiration">Expiration date</Label><div className="relative"><CalendarDays className="absolute left-3 top-3.5 h-4 w-4 text-slate-400" /><Input id="expiration" type="date" value={expiration} onChange={(event) => setExpiration(event.target.value)} min={new Date().toISOString().slice(0, 10)} className="h-11 rounded-xl pl-10 focus-visible:ring-[#0F9F8F]" /></div></div>
+              {!user && <div className="space-y-2"><Label htmlFor="max-streams">Max simultaneous streams</Label><div className="relative"><Radio className="absolute left-3 top-3.5 h-4 w-4 text-slate-400" /><Input id="max-streams" type="number" value={maxStreams} onChange={(event) => setMaxStreams(event.target.value)} required min={1} max={100} className="h-11 rounded-xl pl-10 focus-visible:ring-[#0F9F8F]" /></div></div>}
             </div>
+            {!user && <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-4"><div className="mb-3 flex items-center gap-2"><ShieldCheck className="h-4 w-4 text-[#0F9F8F]" /><p className="text-sm font-semibold text-[#102a43]">Secure download defaults</p></div><div className="grid gap-2 text-xs text-slate-600 sm:grid-cols-3"><div className="flex items-center gap-2 rounded-xl bg-white px-3 py-2.5"><Download className="h-3.5 w-3.5 text-rose-500" /><span>Media downloads disabled</span></div><div className="flex items-center gap-2 rounded-xl bg-white px-3 py-2.5"><Radio className="h-3.5 w-3.5 text-rose-500" /><span>Transcoded downloads disabled</span></div><div className="flex items-center gap-2 rounded-xl bg-white px-3 py-2.5"><Share2 className="h-3.5 w-3.5 text-rose-500" /><span>Social sharing disabled</span></div></div></div>}
             <p className="rounded-xl bg-[#effaf8] px-4 py-3 text-xs leading-5 text-[#116b63]">Profiles expire at 11:59 PM on the selected date. Extending an automatically disabled profile re-enables it.</p>
             {user && <>
               <Separator />
