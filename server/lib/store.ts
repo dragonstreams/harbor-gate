@@ -1,0 +1,35 @@
+import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { dirname, resolve } from "node:path";
+import type { HarborData } from "./types";
+
+const DATA_PATH = resolve(process.cwd(), ".harborgate/data.json");
+const EMPTY_DATA: HarborData = { expirations: {}, events: [] };
+let writeQueue = Promise.resolve();
+
+export async function readData(): Promise<HarborData> {
+  try {
+    const stored = JSON.parse(await readFile(DATA_PATH, "utf8")) as HarborData;
+    return {
+      expirations: stored.expirations ?? {},
+      events: Array.isArray(stored.events) ? stored.events : [],
+    };
+  } catch {
+    return { expirations: {}, events: [] };
+  }
+}
+
+export async function updateData(change: (data: HarborData) => void): Promise<HarborData> {
+  let result = EMPTY_DATA;
+  writeQueue = writeQueue.then(async () => {
+    const data = await readData();
+    change(data);
+    data.events = data.events.slice(0, 100);
+    await mkdir(dirname(DATA_PATH), { recursive: true });
+    const temporaryPath = `${DATA_PATH}.tmp`;
+    await writeFile(temporaryPath, JSON.stringify(data, null, 2), { mode: 0o600 });
+    await rename(temporaryPath, DATA_PATH);
+    result = data;
+  });
+  await writeQueue;
+  return result;
+}
