@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { defineHandler } from "nitro";
 import { createError, readBody } from "nitro/h3";
-import { createUser, deleteUser, listUsers, setPolicy, setUserPassword, updateUser } from "../../lib/emby";
+import { createUser, deleteUser, listFeatures, listUsers, setPolicy, setUserPassword, updateUser } from "../../lib/emby";
 import { enforceExpirations } from "../../lib/expiration";
 import { requireSession } from "../../lib/session";
 import { updateData } from "../../lib/store";
@@ -41,6 +41,13 @@ export default defineHandler(async (event) => {
     const adminName = body.admin?.trim() ?? "";
     if (adminName.length > 100) throw createError({ statusCode: 400, statusMessage: "Admin name is too long" });
     const expiration = cleanExpiration(body.expiration);
+    const features = await listFeatures(session.token);
+    const traktFeatureIds = features
+      .filter((feature) => `${feature.Name} ${feature.Id}`.toLowerCase().includes("trakt"))
+      .map((feature) => feature.Id);
+    if (traktFeatureIds.length === 0) {
+      throw createError({ statusCode: 502, statusMessage: "The Emby server did not expose its Trakt feature ID" });
+    }
     const created = await createUser(session.token, name);
     try {
       await setUserPassword(session.token, created.Id, password);
@@ -54,7 +61,7 @@ export default defineHandler(async (event) => {
         EnablePublicSharing: false,
         EnableLiveTvAccess: false,
         EnableLiveTvManagement: false,
-        AllowSharingPersonalItems: false,
+        RestrictedFeatures: [...new Set([...(created.Policy?.RestrictedFeatures ?? []), ...traktFeatureIds])],
       });
       if (expiration || adminName) {
         await updateData((data) => {

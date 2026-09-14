@@ -39,6 +39,9 @@ async function embyFetch<T>(token: string, path: string, init?: RequestInit): Pr
 
 export const listUsers = (token: string) => embyFetch<EmbyUser[]>(token, "/Users");
 
+export const listFeatures = (token: string) =>
+  embyFetch<{ Id: string; Name: string; FeatureType?: string }[]>(token, "/Features");
+
 export async function createUser(token: string, name: string) {
   return embyFetch<EmbyUser>(token, `/Users/New?Name=${encodeURIComponent(name)}`, { method: "POST" });
 }
