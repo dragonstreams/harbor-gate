@@ -2,9 +2,25 @@
 
 A secure Emby user lifecycle control panel, packaged for Bunny.net Magic Containers.
 
+## Published container image
+
+The GitHub Actions workflow at `.github/workflows/publish-container.yml` builds the Dockerfile and publishes a private image to GitHub Container Registry whenever `main` is updated. It can also be started manually from the repository's **Actions** tab.
+
+The image name is:
+
+```text
+ghcr.io/<github-owner>/<repository>:latest
+```
+
+GitHub image names are lowercase. The completed workflow displays the exact image URI in its run summary.
+
+For a private package, connect `ghcr.io` in Bunny **Image Registries** using the GitHub username and a personal access token with `read:packages`. If the repository belongs to an organization with SSO, authorize that token for the organization. Bunny may require the full image URI to be entered rather than listing private packages automatically.
+
+If publishing returns a package permission error, verify that GitHub Actions is allowed to create packages for the repository and that workflow permissions have not been restricted below `packages: write` by an organization policy.
+
 ## Bunny Magic Containers configuration
 
-Build and publish the included `Dockerfile` to a container registry, then create a Magic Container using that image with these settings:
+Create a Magic Container using the published `:latest` image with these settings:
 
 | Setting | Value |
 | --- | --- |
