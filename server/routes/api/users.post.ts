@@ -11,6 +11,7 @@ type RequestBody = {
   operation?: "create" | "update" | "delete";
   id?: string;
   name?: string;
+  admin?: string;
   expiration?: string | null;
   policy?: EmbyPolicy;
 };
@@ -29,11 +30,13 @@ export default defineHandler(async (event) => {
 
   if (body?.operation === "create") {
     if (!name || name.length > 100) throw createError({ statusCode: 400, statusMessage: "Enter a profile name" });
+    const adminName = body.admin?.trim() ?? "";
+    if (adminName.length > 100) throw createError({ statusCode: 400, statusMessage: "Admin name is too long" });
     const created = await createUser(session.token, name);
     const expiration = cleanExpiration(body.expiration);
-    if (expiration) {
+    if (expiration || adminName) {
       await updateData((data) => {
-        data.expirations[created.Id] = { expiresAt: expiration, disabledByHarborGate: false };
+        data.expirations[created.Id] = { expiresAt: expiration, disabledByHarborGate: false, adminName };
       });
     }
     await enforceExpirations(session.token);
@@ -57,12 +60,14 @@ export default defineHandler(async (event) => {
     const expiration = cleanExpiration(body.expiration);
     const oldData = await updateData(() => undefined);
     const oldRecord = oldData.expirations[user.Id];
+    const adminName = body.admin === undefined ? oldRecord?.adminName ?? "" : body.admin.trim();
+    if (adminName.length > 100) throw createError({ statusCode: 400, statusMessage: "Admin name is too long" });
     const shouldReactivate = Boolean(oldRecord?.disabledByHarborGate && expiration && new Date(expiration).getTime() > Date.now());
     const nextPolicy = { ...user.Policy, ...body.policy, IsAdministrator: false };
     if (shouldReactivate) nextPolicy.IsDisabled = false;
     await updateUser(session.token, user, name, nextPolicy);
     await updateData((data) => {
-      data.expirations[user.Id] = { expiresAt: expiration, disabledByHarborGate: false };
+      data.expirations[user.Id] = { expiresAt: expiration, disabledByHarborGate: false, adminName };
       if (shouldReactivate) {
         data.events.unshift({ id: randomUUID(), userId: user.Id, userName: name, occurredAt: new Date().toISOString(), action: "reactivated" });
       }

@@ -22,6 +22,7 @@ export type EmbyUser = {
 export type ExpirationRecord = {
   expiresAt: string | null;
   disabledByHarborGate: boolean;
+  adminName?: string;
 };
 
 export type ExpirationEvent = {

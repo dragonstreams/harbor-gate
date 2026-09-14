@@ -14,6 +14,7 @@ export default defineHandler(async (event) => {
     users: users.map((user) => ({
       ...user,
       expiration: data.expirations[user.Id]?.expiresAt ?? null,
+      admin: data.expirations[user.Id]?.adminName ?? "",
     })),
     events: data.events,
   };

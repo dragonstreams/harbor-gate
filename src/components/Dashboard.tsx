@@ -48,7 +48,8 @@ export function Dashboard({ data, onRefresh, onMutate, onLogout }: DashboardProp
 
   const manageable = data.users.filter((user) => !user.Policy?.IsAdministrator);
   const filtered = useMemo(() => manageable.filter((user) => {
-    const matchesSearch = user.Name.toLowerCase().includes(search.toLowerCase());
+    const query = search.toLowerCase();
+    const matchesSearch = user.Name.toLowerCase().includes(query) || user.admin.toLowerCase().includes(query);
     const state = expirationState(user).label;
     const matchesFilter = filter === "all" || (filter === "active" && !user.Policy?.IsDisabled) || (filter === "disabled" && Boolean(user.Policy?.IsDisabled)) || (filter === "expiring" && state.endsWith("d left"));
     return matchesSearch && matchesFilter;
@@ -75,6 +76,21 @@ export function Dashboard({ data, onRefresh, onMutate, onLogout }: DashboardProp
       toast.success(enabled ? `${user.Name} enabled` : `${user.Name} disabled`);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Unable to update profile");
+    } finally {
+      setBusyId("");
+    }
+  }
+
+  async function saveAdmin(user: EmbyUser, value: string) {
+    const admin = value.trim();
+    if (admin === user.admin) return;
+    setBusyId(user.Id);
+    try {
+      await onMutate({ operation: "update", id: user.Id, name: user.Name, admin, expiration: user.expiration, policy: user.Policy ?? {} });
+      await onRefresh();
+      toast.success(`Admin saved for ${user.Name}`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Unable to save admin");
     } finally {
       setBusyId("");
     }
@@ -132,8 +148,8 @@ export function Dashboard({ data, onRefresh, onMutate, onLogout }: DashboardProp
 
             {filtered.length === 0 ? <div className="flex flex-col items-center px-6 py-14 text-center"><img src="/assets/harborgate-empty.png" alt="No matching profiles" className="mb-5 h-32 w-32 object-contain" /><h3 className="font-semibold">No profiles found</h3><p className="mt-1 max-w-sm text-sm text-slate-500">Try another search or filter, or create a new Emby profile.</p></div> : <div className="divide-y divide-slate-100">{filtered.map((user) => {
               const status = expirationState(user);
-              return <article key={user.Id} className="group grid gap-4 p-4 transition hover:bg-slate-50/70 sm:grid-cols-[minmax(190px,1.4fr)_minmax(120px,.8fr)_minmax(125px,.8fr)_80px_38px] sm:items-center sm:px-5">
-                <button onClick={() => { setSelectedUser(user); setDialogOpen(true); }} className="flex min-w-0 items-center gap-3 text-left"><div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[#e7f8f5] text-sm font-bold text-[#087d71]">{initials(user.Name)}</div><div className="min-w-0"><p className="truncate font-semibold">{user.Name}</p><p className="mt-0.5 flex items-center gap-1.5 text-xs text-slate-500">{user.HasPassword ? <ShieldCheck className="h-3.5 w-3.5 text-[#0F9F8F]" /> : <CircleUserRound className="h-3.5 w-3.5" />}{user.HasPassword ? "Password protected" : "No password"}</p></div></button>
+              return <article key={user.Id} className="group grid gap-4 p-4 transition hover:bg-slate-50/70 sm:grid-cols-[minmax(240px,1.6fr)_minmax(120px,.8fr)_minmax(125px,.8fr)_80px_38px] sm:items-center sm:px-5">
+                <div className="flex min-w-0 items-start gap-3"><div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[#e7f8f5] text-sm font-bold text-[#087d71]">{initials(user.Name)}</div><div className="min-w-0 flex-1"><button onClick={() => { setSelectedUser(user); setDialogOpen(true); }} className="block max-w-full text-left"><p className="truncate font-semibold">{user.Name}</p><p className="mt-0.5 flex items-center gap-1.5 text-xs text-slate-500">{user.HasPassword ? <ShieldCheck className="h-3.5 w-3.5 text-[#0F9F8F]" /> : <CircleUserRound className="h-3.5 w-3.5" />}{user.HasPassword ? "Password protected" : "No password"}</p></button><div className="mt-2 flex items-center gap-2"><label htmlFor={`admin-${user.Id}`} className="shrink-0 text-xs font-semibold text-slate-500">Admin:</label><Input key={`${user.Id}-${user.admin}`} id={`admin-${user.Id}`} defaultValue={user.admin} maxLength={100} disabled={busyId === user.Id} onBlur={(event) => saveAdmin(user, event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }} placeholder="Owner name" className="h-7 min-w-0 rounded-lg border-slate-200 bg-white px-2.5 text-xs focus-visible:ring-[#0F9F8F]" /></div></div></div>
                 <div><p className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400 sm:hidden">Status</p><Badge variant="outline" className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${status.tone}`}>{status.label}</Badge></div>
                 <div><p className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400 sm:hidden">Expires</p><p className="flex items-center gap-1.5 text-sm text-slate-600"><Clock3 className="h-3.5 w-3.5 text-slate-400" />{formatDate(user.expiration)}</p></div>
                 <div className="flex items-center gap-2"><Switch disabled={busyId === user.Id} checked={!user.Policy?.IsDisabled} onCheckedChange={(checked) => toggleUser(user, checked)} className="data-[state=checked]:bg-[#0F9F8F]" /><span className="text-xs text-slate-500 sm:hidden">Access enabled</span></div>
