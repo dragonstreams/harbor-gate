@@ -1,0 +1,15 @@
+node_modules
+.output
+dist
+.git
+.github
+.dyad
+.harborgate
+.env
+.env.*
+*.local
+*.log
+coverage
+playwright-report
+test-results
+README.md

@@ -3,16 +3,19 @@ import { enforceExpirations } from "../lib/expiration";
 import { getActiveTokens } from "../lib/session";
 
 export default definePlugin((nitroApp) => {
-  const timer = setInterval(async () => {
-    const token = getActiveTokens()[0];
-    if (token) {
-      try {
-        await enforceExpirations(token);
-      } catch {
-        // A failed Emby check is retried on the next interval.
-      }
+  async function checkExpirations() {
+    const serviceToken = process.env.HARBORGATE_EMBY_API_KEY?.trim();
+    const token = serviceToken || getActiveTokens()[0];
+    if (!token) return;
+    try {
+      await enforceExpirations(token);
+    } catch {
+      // Transient Emby failures are retried on the next interval.
     }
-  }, 60_000);
+  }
+
+  void checkExpirations();
+  const timer = setInterval(checkExpirations, 60_000);
   timer.unref?.();
   nitroApp.hooks.hook("close", () => clearInterval(timer));
 });

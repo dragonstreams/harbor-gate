@@ -1,7 +1,8 @@
 {
-  "name": "vite_react_shadcn_ts",
-  "version": "0.0.0",
+  "name": "harborgate",
+  "version": "1.0.0",
   "private": true,
+  "packageManager": "pnpm@10.4.1",
   "type": "module",
   "scripts": {
     "dev": "vite",

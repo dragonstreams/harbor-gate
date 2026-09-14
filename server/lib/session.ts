@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import type { H3Event } from "nitro/h3";
-import { createError, deleteCookie, getCookie, getRequestURL, setCookie } from "nitro/h3";
+import { createError, deleteCookie, getCookie, getHeader, getRequestURL, setCookie } from "nitro/h3";
 
 const COOKIE_NAME = "harborgate_session";
 const SESSION_TTL = 12 * 60 * 60 * 1000;
@@ -9,7 +9,8 @@ type Session = { token: string; adminName: string; csrf: string; expiresAt: numb
 const sessions = new Map<string, Session>();
 
 function secureCookie(event: H3Event) {
-  return getRequestURL(event).protocol === "https:";
+  const forwardedProtocol = getHeader(event, "x-forwarded-proto")?.split(",")[0]?.trim();
+  return process.env.NODE_ENV === "production" || forwardedProtocol === "https" || getRequestURL(event).protocol === "https:";
 }
 
 export function createSession(event: H3Event, token: string, adminName: string) {

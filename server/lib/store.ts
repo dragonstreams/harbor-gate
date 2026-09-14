@@ -2,7 +2,8 @@ import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import type { HarborData } from "./types";
 
-const DATA_PATH = resolve(process.cwd(), ".harborgate/data.json");
+const DATA_DIRECTORY = process.env.HARBORGATE_DATA_DIR?.trim() || resolve(process.cwd(), ".harborgate");
+const DATA_PATH = resolve(DATA_DIRECTORY, "data.json");
 const EMPTY_DATA: HarborData = { expirations: {}, events: [] };
 let writeQueue = Promise.resolve();
 
