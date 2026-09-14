@@ -52,6 +52,9 @@ export default defineHandler(async (event) => {
         EnableContentDownloading: false,
         EnableSyncTranscoding: false,
         EnablePublicSharing: false,
+        EnableLiveTvAccess: false,
+        EnableLiveTvManagement: false,
+        AllowSharingPersonalData: false,
       });
       if (expiration || adminName) {
         await updateData((data) => {
