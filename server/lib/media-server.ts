@@ -9,6 +9,16 @@ function clientHeader(serverId: ServerId) {
   return `MediaBrowser Client="HarborGate", Device="Secure Control Panel", DeviceId="harborgate-${serverId}", Version="1.0.0"`;
 }
 
+function authenticationHeaders(serverId: ServerId, token?: string): Record<string, string> {
+  if (serverId === "jellyfin") {
+    return { Authorization: `${clientHeader(serverId)}${token ? `, Token="${token}"` : ""}` };
+  }
+  return {
+    "X-Emby-Authorization": clientHeader(serverId),
+    ...(token ? { "X-Emby-Token": token } : {}),
+  };
+}
+
 async function parseResponse<T>(serverId: ServerId, response: Response): Promise<T> {
   if (!response.ok) {
     const detail = await response.text();
@@ -24,8 +34,7 @@ async function mediaFetch<T>(serverId: ServerId, token: string, path: string, in
     ...init,
     headers: {
       "Content-Type": "application/json",
-      "X-Emby-Token": token,
-      "X-Emby-Authorization": clientHeader(serverId),
+      ...authenticationHeaders(serverId, token),
       ...init?.headers,
     },
   });
@@ -35,7 +44,7 @@ async function mediaFetch<T>(serverId: ServerId, token: string, path: string, in
 export async function authenticate(serverId: ServerId, username: string, password: string) {
   const response = await fetch(`${MEDIA_SERVERS[serverId].url}/Users/AuthenticateByName`, {
     method: "POST",
-    headers: { "Content-Type": "application/json", "X-Emby-Authorization": clientHeader(serverId) },
+    headers: { "Content-Type": "application/json", ...authenticationHeaders(serverId) },
     body: JSON.stringify({ Username: username, Pw: password }),
   });
   const result = await parseResponse<{ AccessToken: string; User: EmbyUser }>(serverId, response);
