@@ -1,21 +1,24 @@
 import { defineHandler } from "nitro";
 import { enforceExpirations } from "../../lib/expiration";
-import { listUsers } from "../../lib/emby";
+import { listUsers, MEDIA_SERVERS } from "../../lib/media-server";
 import { requireSession } from "../../lib/session";
-import { readData } from "../../lib/store";
+import { getExpiration, readData } from "../../lib/store";
 
 export default defineHandler(async (event) => {
   const session = requireSession(event);
-  await enforceExpirations(session.token);
-  const [users, data] = await Promise.all([listUsers(session.token), readData()]);
+  await enforceExpirations(session.serverId, session.token);
+  const [users, data] = await Promise.all([listUsers(session.serverId, session.token), readData()]);
+  const server = MEDIA_SERVERS[session.serverId];
   return {
     adminName: session.adminName,
     csrf: session.csrf,
-    users: users.map((user) => ({
-      ...user,
-      expiration: data.expirations[user.Id]?.expiresAt ?? null,
-      admin: data.expirations[user.Id]?.adminName ?? "",
-    })),
-    events: data.events,
+    serverId: session.serverId,
+    serverLabel: server.label,
+    serverHostname: server.hostname,
+    users: users.map((user) => {
+      const expiration = getExpiration(data, session.serverId, user.Id);
+      return { ...user, expiration: expiration?.expiresAt ?? null, admin: expiration?.adminName ?? "" };
+    }),
+    events: data.events.filter((item) => (item.serverId ?? "emby") === session.serverId),
   };
 });

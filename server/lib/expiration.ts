@@ -1,28 +1,30 @@
 import { randomUUID } from "node:crypto";
-import { listUsers, setPolicy } from "./emby";
-import { readData, updateData } from "./store";
+import { listUsers, setPolicy } from "./media-server";
+import { expirationKey, getExpiration, readData, updateData } from "./store";
+import type { ServerId } from "./types";
 
-let running = false;
+const running = new Set<ServerId>();
 
-export async function enforceExpirations(token: string) {
-  if (running) return;
-  running = true;
+export async function enforceExpirations(serverId: ServerId, token: string) {
+  if (running.has(serverId)) return;
+  running.add(serverId);
   try {
-    const [data, users] = await Promise.all([readData(), listUsers(token)]);
+    const [data, users] = await Promise.all([readData(), listUsers(serverId, token)]);
     const now = Date.now();
     for (const user of users) {
-      const record = data.expirations[user.Id];
+      const record = getExpiration(data, serverId, user.Id);
       if (!record?.expiresAt) continue;
       const expired = new Date(record.expiresAt).getTime() <= now;
       if (expired && !user.Policy?.IsDisabled) {
-        await setPolicy(token, user.Id, { ...user.Policy, IsDisabled: true });
+        await setPolicy(serverId, token, user.Id, { ...user.Policy, IsDisabled: true });
         await updateData((next) => {
-          next.expirations[user.Id] = { ...record, disabledByHarborGate: true };
-          next.events.unshift({ id: randomUUID(), userId: user.Id, userName: user.Name, occurredAt: new Date().toISOString(), action: "expired" });
+          next.expirations[expirationKey(serverId, user.Id)] = { ...record, disabledByHarborGate: true };
+          if (serverId === "emby") delete next.expirations[user.Id];
+          next.events.unshift({ id: randomUUID(), serverId, userId: user.Id, userName: user.Name, occurredAt: new Date().toISOString(), action: "expired" });
         });
       }
     }
   } finally {
-    running = false;
+    running.delete(serverId);
   }
 }

@@ -1,3 +1,5 @@
+export type ServerId = "emby" | "jellyfin";
+
 export type EmbyPolicy = {
   IsAdministrator?: boolean;
   IsDisabled?: boolean;
@@ -13,6 +15,7 @@ export type EmbyPolicy = {
   EnableLiveTvAccess?: boolean;
   EnableLiveTvManagement?: boolean;
   SimultaneousStreamLimit?: number;
+  MaxActiveSessions?: number;
   [key: string]: unknown;
 };
 
@@ -33,6 +36,7 @@ export type ExpirationRecord = {
 
 export type ExpirationEvent = {
   id: string;
+  serverId?: ServerId;
   userId: string;
   userName: string;
   occurredAt: string;

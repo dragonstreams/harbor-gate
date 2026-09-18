@@ -1,11 +1,13 @@
 import { randomBytes } from "node:crypto";
 import type { H3Event } from "nitro/h3";
 import { createError, deleteCookie, getCookie, getHeader, getRequestURL, setCookie } from "nitro/h3";
+import { MEDIA_SERVERS } from "./media-server";
+import type { ServerId } from "./types";
 
 const COOKIE_NAME = "harborgate_session";
 const SESSION_TTL = 12 * 60 * 60 * 1000;
 
-type Session = { token: string; adminName: string; csrf: string; expiresAt: number };
+type Session = { token: string; adminName: string; csrf: string; serverId: ServerId; expiresAt: number };
 const sessions = new Map<string, Session>();
 
 function secureCookie(event: H3Event) {
@@ -13,10 +15,10 @@ function secureCookie(event: H3Event) {
   return process.env.NODE_ENV === "production" || forwardedProtocol === "https" || getRequestURL(event).protocol === "https:";
 }
 
-export function createSession(event: H3Event, token: string, adminName: string) {
+export function createSession(event: H3Event, token: string, adminName: string, serverId: ServerId) {
   const id = randomBytes(32).toString("hex");
   const csrf = randomBytes(24).toString("base64url");
-  sessions.set(id, { token, adminName, csrf, expiresAt: Date.now() + SESSION_TTL });
+  sessions.set(id, { token, adminName, csrf, serverId, expiresAt: Date.now() + SESSION_TTL });
   setCookie(event, COOKIE_NAME, id, {
     httpOnly: true,
     sameSite: "strict",
@@ -24,7 +26,7 @@ export function createSession(event: H3Event, token: string, adminName: string) 
     path: "/",
     maxAge: SESSION_TTL / 1000,
   });
-  return { adminName, csrf };
+  return { adminName, csrf, serverId, serverLabel: MEDIA_SERVERS[serverId].label };
 }
 
 export function requireSession(event: H3Event, mutation = false) {
@@ -46,12 +48,12 @@ export function removeSession(event: H3Event) {
   deleteCookie(event, COOKIE_NAME, { path: "/" });
 }
 
-export function getActiveTokens() {
+export function getActiveConnections() {
   const now = Date.now();
-  const tokens = new Set<string>();
+  const connections = new Map<ServerId, string>();
   for (const [id, session] of sessions) {
     if (session.expiresAt < now) sessions.delete(id);
-    else tokens.add(session.token);
+    else if (!connections.has(session.serverId)) connections.set(session.serverId, session.token);
   }
-  return [...tokens];
+  return [...connections].map(([serverId, token]) => ({ serverId, token }));
 }

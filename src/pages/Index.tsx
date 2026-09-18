@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { Dashboard } from "@/components/Dashboard";
 import { LoginScreen } from "@/components/LoginScreen";
-import { getDashboard, mutateUser, signIn, signOut, type DashboardData } from "@/lib/harborgate";
+import { getDashboard, mutateUser, signIn, signOut, type DashboardData, type ServerId } from "@/lib/harborgate";
 
 const Index = () => {
   const [data, setData] = useState<DashboardData | null>(null);
@@ -17,8 +17,8 @@ const Index = () => {
     refresh().catch(() => setData(null)).finally(() => setLoading(false));
   }, []);
 
-  async function login(username: string, password: string) {
-    await signIn(username, password);
+  async function login(serverId: ServerId, username: string, password: string) {
+    await signIn(serverId, username, password);
     await refresh();
   }
 

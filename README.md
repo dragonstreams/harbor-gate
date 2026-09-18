@@ -1,6 +1,6 @@
 # HarborGate
 
-A secure Emby user lifecycle control panel, packaged for Bunny.net Magic Containers.
+A secure Emby and Jellyfin user lifecycle control panel, packaged for Bunny.net Magic Containers.
 
 ## Published container image
 
@@ -41,11 +41,12 @@ Use one replica because HarborGate administrator sessions are held in memory and
 | `PORT` | No | `8080` | Nitro HTTP listener port |
 | `HOST` | No | `0.0.0.0` | Nitro listener address |
 | `HARBORGATE_DATA_DIR` | No | `/data` in the image | Directory for expiration metadata and history |
-| `HARBORGATE_EMBY_API_KEY` | Recommended | None | Emby API key used by background expiration enforcement when no admin is signed in |
+| `HARBORGATE_EMBY_API_KEY` | Recommended | None | Emby API key for unattended expiration enforcement |
+| `HARBORGATE_JELLYFIN_API_KEY` | Recommended | None | Jellyfin API key for unattended expiration enforcement |
 
-Create the Emby API key in the Emby dashboard and add it as a secret environment variable in Bunny. Do not bake it into the image. Interactive panel access still requires Emby administrator credentials.
+Create API keys in the Emby and Jellyfin dashboards and add them as secret environment variables in Bunny. Do not bake them into the image. Interactive panel access still requires administrator credentials for the selected server.
 
-Without `HARBORGATE_EMBY_API_KEY`, profile management works normally, but background expiration enforcement only runs while at least one HarborGate administrator session is active.
+Without a server's API key, its profile management works normally, but background expiration enforcement only runs while a HarborGate administrator session for that server is active.
 
 ## Persistent storage
 
@@ -55,7 +56,7 @@ Bunny volumes are per-pod and are not automatically replicated or backed up. Kee
 
 ## Security notes
 
-- Emby credentials are sent only to the HarborGate backend and the configured Emby server.
+- Emby and Jellyfin credentials are sent only to the HarborGate backend and the selected fixed server.
 - Sessions use HTTP-only, same-site cookies and CSRF tokens.
 - The production image runs as an unprivileged user.
 - Browser security headers block framing and restrict scripts, connections, and media to HarborGate itself.

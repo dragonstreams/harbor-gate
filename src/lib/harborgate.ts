@@ -1,3 +1,5 @@
+export type ServerId = "emby" | "jellyfin";
+
 export type UserPolicy = {
   IsAdministrator?: boolean;
   IsDisabled?: boolean;
@@ -13,6 +15,7 @@ export type UserPolicy = {
   EnableLiveTvAccess?: boolean;
   EnableLiveTvManagement?: boolean;
   SimultaneousStreamLimit?: number;
+  MaxActiveSessions?: number;
 };
 
 export type EmbyUser = {
@@ -37,6 +40,9 @@ export type ExpirationEvent = {
 export type DashboardData = {
   adminName: string;
   csrf: string;
+  serverId: ServerId;
+  serverLabel: string;
+  serverHostname: string;
   users: EmbyUser[];
   events: ExpirationEvent[];
 };
@@ -52,10 +58,10 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const getDashboard = () => request<DashboardData>("/api/dashboard");
 
-export const signIn = (username: string, password: string) => request<{ adminName: string; csrf: string }>("/api/session", {
+export const signIn = (serverId: ServerId, username: string, password: string) => request<{ adminName: string; csrf: string; serverId: ServerId }>("/api/session", {
   method: "POST",
   headers: { "Content-Type": "application/json" },
-  body: JSON.stringify({ username, password }),
+  body: JSON.stringify({ serverId, username, password }),
 });
 
 export const mutateUser = (csrf: string, body: object) => request<{ ok: boolean }>("/api/users", {
