@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Activity, CalendarClock, ChevronDown, CircleUserRound, Clock3, History, LayoutDashboard, LogOut, Menu, MoreHorizontal, Plus, Search, Server, ShieldCheck, Trash2, UserRoundCheck, UsersRound, UserX, X } from "lucide-react";
+import { Activity, Boxes, CalendarClock, ChevronDown, CircleUserRound, Clock3, History, LayoutDashboard, LogOut, Menu, MoreHorizontal, Plus, Search, Server, ShieldCheck, Trash2, UserRoundCheck, UsersRound, UserX, X } from "lucide-react";
 import { toast } from "sonner";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { Switch } from "@/components/ui/switch";
 import type { DashboardData, EmbyUser } from "@/lib/harborgate";
+import { InstanceManager } from "./InstanceManager";
 import { UserDialog } from "./UserDialog";
 
 interface DashboardProps {
@@ -45,6 +46,7 @@ export function Dashboard({ data, onRefresh, onMutate, onLogout }: DashboardProp
   const [deleteTarget, setDeleteTarget] = useState<EmbyUser | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [busyId, setBusyId] = useState("");
+  const [view, setView] = useState<"users" | "instances">("users");
 
   const manageable = data.users.filter((user) => !user.Policy?.IsAdministrator);
   const filtered = useMemo(() => manageable.filter((user) => {
@@ -112,7 +114,8 @@ export function Dashboard({ data, onRefresh, onMutate, onLogout }: DashboardProp
   }
 
   const Navigation = () => <nav className="space-y-2">
-    <button className="flex w-full items-center gap-3 rounded-xl bg-white/10 px-4 py-3 text-sm font-medium text-white"><LayoutDashboard className="h-4 w-4 text-[#55d7c6]" /> User profiles</button>
+    <button onClick={() => setView("users")} className={`flex w-full items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium transition ${view === "users" ? "bg-white/10 text-white" : "text-slate-300 hover:bg-white/5 hover:text-white"}`}><LayoutDashboard className={`h-4 w-4 ${view === "users" ? "text-[#55d7c6]" : ""}`} /> User profiles</button>
+    {data.isMaster && <button onClick={() => setView("instances")} className={`flex w-full items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium transition ${view === "instances" ? "bg-white/10 text-white" : "text-slate-300 hover:bg-white/5 hover:text-white"}`}><Boxes className={`h-4 w-4 ${view === "instances" ? "text-[#55d7c6]" : ""}`} /> HarborGate instances</button>}
     <button onClick={() => setHistoryOpen(true)} className="flex w-full items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium text-slate-300 transition hover:bg-white/5 hover:text-white"><History className="h-4 w-4" /> Expiration history</button>
   </nav>;
 
@@ -127,13 +130,13 @@ export function Dashboard({ data, onRefresh, onMutate, onLogout }: DashboardProp
       <main className="lg:pl-64">
         <header className="sticky top-0 z-10 border-b border-slate-200/80 bg-white/90 px-4 py-3 backdrop-blur-xl sm:px-7 lg:px-10">
           <div className="mx-auto flex max-w-7xl items-center justify-between">
-            <div className="flex items-center gap-3 lg:hidden"><Sheet><SheetTrigger asChild><Button variant="ghost" size="icon" className="rounded-xl"><Menu className="h-5 w-5" /></Button></SheetTrigger><SheetContent side="left" className="w-72 border-0 bg-[#0b2135] text-white"><SheetHeader className="mb-8 text-left"><SheetTitle className="flex items-center gap-3 text-white"><img src="/assets/harborgate-logo.png" alt="" className="h-10 w-10 rounded-xl" /> HarborGate</SheetTitle></SheetHeader><Navigation /></SheetContent></Sheet><span className="font-semibold">User profiles</span></div>
-            <div className="hidden items-center gap-2 text-sm text-slate-500 lg:flex"><Server className="h-4 w-4 text-[#0F9F8F]" /> {data.serverLabel} server <span className="rounded-full bg-emerald-50 px-2 py-1 text-xs font-semibold text-emerald-700">Online</span></div>
+            <div className="flex items-center gap-3 lg:hidden"><Sheet><SheetTrigger asChild><Button variant="ghost" size="icon" className="rounded-xl"><Menu className="h-5 w-5" /></Button></SheetTrigger><SheetContent side="left" className="w-72 border-0 bg-[#0b2135] text-white"><SheetHeader className="mb-8 text-left"><SheetTitle className="flex items-center gap-3 text-white"><img src="/assets/harborgate-logo.png" alt="" className="h-10 w-10 rounded-xl" /> HarborGate</SheetTitle></SheetHeader><Navigation /></SheetContent></Sheet><span className="font-semibold">{view === "instances" ? "HarborGate instances" : "User profiles"}</span></div>
+            <div className="hidden items-center gap-2 text-sm text-slate-500 lg:flex"><Server className="h-4 w-4 text-[#0F9F8F]" /> {view === "instances" ? "Master control panel" : `${data.serverLabel} server`} <span className="rounded-full bg-emerald-50 px-2 py-1 text-xs font-semibold text-emerald-700">Online</span></div>
             <DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" className="h-11 gap-3 rounded-xl px-2"><div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#e7f8f5] text-xs font-bold text-[#087d71]">{initials(data.adminName)}</div><div className="hidden text-left sm:block"><p className="text-sm font-semibold">{data.adminName}</p><p className="text-xs text-slate-500">{data.serverLabel} administrator</p></div><ChevronDown className="h-4 w-4 text-slate-400" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end" className="w-48 rounded-xl"><DropdownMenuItem onClick={onLogout} className="rounded-lg text-rose-600"><LogOut className="mr-2 h-4 w-4" /> Switch server</DropdownMenuItem></DropdownMenuContent></DropdownMenu>
           </div>
         </header>
 
-        <div className="mx-auto max-w-7xl px-4 py-7 sm:px-7 lg:px-10 lg:py-10">
+        {view === "instances" ? <InstanceManager csrf={data.csrf} /> : <div className="mx-auto max-w-7xl px-4 py-7 sm:px-7 lg:px-10 lg:py-10">
           <section className="mb-8 flex flex-col justify-between gap-5 sm:flex-row sm:items-end">
             <div><p className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-[#0F9F8F]">{data.serverLabel} · People & access</p><h1 className="text-3xl font-semibold tracking-[-0.04em] sm:text-4xl">User profiles</h1><p className="mt-2 text-sm text-slate-500">Manage who can access your {data.serverLabel} media server.</p></div>
             <Button onClick={() => { setSelectedUser(null); setDialogOpen(true); }} className="h-11 rounded-xl bg-[#0F9F8F] px-5 font-semibold text-white shadow-lg shadow-teal-800/10 hover:bg-[#0b887b]"><Plus className="mr-2 h-4 w-4" /> New profile</Button>
@@ -158,7 +161,7 @@ export function Dashboard({ data, onRefresh, onMutate, onLogout }: DashboardProp
             })}</div>}
           </section>
           <p className="mt-4 flex items-center justify-center gap-2 text-center text-xs text-slate-400"><Activity className="h-3.5 w-3.5" /> Expirations are checked every minute while an administrator session is active.</p>
-        </div>
+        </div>}
       </main>
 
       <UserDialog open={dialogOpen} user={selectedUser} serverId={data.serverId} onOpenChange={setDialogOpen} onSave={saveUser} />

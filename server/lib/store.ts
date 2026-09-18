@@ -4,7 +4,7 @@ import type { HarborData, ServerId } from "./types";
 
 const DATA_DIRECTORY = process.env.HARBORGATE_DATA_DIR?.trim() || resolve(process.cwd(), ".harborgate");
 const DATA_PATH = resolve(DATA_DIRECTORY, "data.json");
-const EMPTY_DATA: HarborData = { expirations: {}, events: [] };
+const EMPTY_DATA: HarborData = { expirations: {}, events: [], instances: [] };
 let writeQueue = Promise.resolve();
 
 export const expirationKey = (serverId: ServerId, userId: string) => `${serverId}:${userId}`;
@@ -19,9 +19,10 @@ export async function readData(): Promise<HarborData> {
     return {
       expirations: stored.expirations ?? {},
       events: Array.isArray(stored.events) ? stored.events : [],
+      instances: Array.isArray(stored.instances) ? stored.instances : [],
     };
   } catch {
-    return { expirations: {}, events: [] };
+    return { expirations: {}, events: [], instances: [] };
   }
 }
 

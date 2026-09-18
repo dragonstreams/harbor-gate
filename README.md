@@ -43,20 +43,36 @@ Use one replica because HarborGate administrator sessions are held in memory and
 | `HARBORGATE_DATA_DIR` | No | `/data` in the image | Directory for expiration metadata and history |
 | `HARBORGATE_EMBY_API_KEY` | Recommended | None | Emby API key for unattended expiration enforcement |
 | `HARBORGATE_JELLYFIN_API_KEY` | Recommended | None | Jellyfin API key for unattended expiration enforcement |
+| `HARBORGATE_MODE` | No | `master` | Set to `child` only on automatically provisioned instances |
+| `BUNNY_API_KEY` | Master deployment | None | Bunny account API key; keep it server-side |
+| `HARBORGATE_CHILD_IMAGE` | Master deployment | None | Complete HarborGate container image URI and tag |
+| `BUNNY_REGION_ID` | Master deployment | None | Bunny region used for one-replica child applications |
+| `BUNNY_REGISTRY_ID` | Private images | None | Bunny Magic Containers registry identifier |
+| `HARBORGATE_ENCRYPTION_KEY` | Master deployment | None | Stable 32-byte base64 or 64-character hex AES key |
+| `HARBORGATE_BASE_DOMAIN` | No | Bunny hostname | Base domain for automatic child subdomains |
+| `BUNNY_DNS_ZONE_ID` | With base domain | None | Bunny DNS zone where child CNAME records are created |
 
 Create API keys in the Emby and Jellyfin dashboards and add them as secret environment variables in Bunny. Do not bake them into the image. Interactive panel access still requires administrator credentials for the selected server.
 
 Without a server's API key, its profile management works normally, but background expiration enforcement only runs while a HarborGate administrator session for that server is active.
 
+## Master deployments
+
+The default master mode adds **HarborGate instances** to the authenticated administrator dashboard. A deployment validates the supplied public HTTPS Emby or Jellyfin address and administrator credentials before creating a dedicated Bunny application with one replica, a 1 GB `/data` volume, health probes, and an HTTPS CDN endpoint.
+
+Set `HARBORGATE_BASE_DOMAIN` and `BUNNY_DNS_ZONE_ID` together to create names such as `<instance>.example.com`. Without both values, the child uses its Bunny-generated hostname. The master stores the submitted media-server credentials encrypted with AES-256-GCM; keep `HARBORGATE_ENCRYPTION_KEY` stable and secret. Child deployments receive the validated media-server address and session token, not the plaintext password.
+
+For SSRF protection, deployment accepts only HTTPS server addresses that resolve entirely to public IP addresses and does not follow redirects. Private, loopback, link-local, and metadata-network targets are rejected.
+
 ## Persistent storage
 
-Attach a Bunny persistent volume at `/data`. HarborGate stores only expiration dates and the last 100 automatic expiration/reactivation events there. Administrator passwords and session tokens are never written to disk.
+Attach a Bunny persistent volume at `/data`. Child instances store expiration dates and the last 100 automatic expiration/reactivation events. The master additionally stores its instance registry and AES-GCM-encrypted media administrator credentials. Session tokens remain in memory.
 
-Bunny volumes are per-pod and are not automatically replicated or backed up. Keep the application at one replica and include the volume in your own backup plan if expiration history is critical.
+Bunny volumes are per-pod and are not automatically replicated or backed up. Keep every application at one replica and include the volume in your own backup plan if instance metadata or expiration history is critical.
 
 ## Security notes
 
-- Emby and Jellyfin credentials are sent only to the HarborGate backend and the selected fixed server.
+- Emby and Jellyfin credentials are sent only to the HarborGate backend and the selected or provisioned server.
 - Sessions use HTTP-only, same-site cookies and CSRF tokens.
 - The production image runs as an unprivileged user.
 - Browser security headers block framing and restrict scripts, connections, and media to HarborGate itself.

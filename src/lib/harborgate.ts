@@ -43,8 +43,34 @@ export type DashboardData = {
   serverId: ServerId;
   serverLabel: string;
   serverHostname: string;
+  isMaster: boolean;
   users: EmbyUser[];
   events: ExpirationEvent[];
+};
+
+export type RuntimeConfig = {
+  mode: "master" | "child";
+  serverId: ServerId | null;
+  serverLabel: string | null;
+  serverHostname: string | null;
+};
+
+export type ManagedInstance = {
+  id: string;
+  name: string;
+  slug: string;
+  serverId: ServerId;
+  serverUrl: string;
+  bunnyAppId: string;
+  publicUrl: string;
+  bunnyHostname: string;
+  createdAt: string;
+  status: "active" | "failed";
+};
+
+export type InstancesData = {
+  configuration: { ready: boolean; missing: string[] };
+  instances: ManagedInstance[];
 };
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -56,7 +82,18 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return response.json() as Promise<T>;
 }
 
+export const getRuntimeConfig = () => request<RuntimeConfig>("/api/config");
+
 export const getDashboard = () => request<DashboardData>("/api/dashboard");
+
+export const getInstances = () => request<InstancesData>("/api/instances");
+
+export const deployInstance = (csrf: string, body: { name: string; serverId: ServerId; serverUrl: string; username: string; password: string }) =>
+  request<{ instance: ManagedInstance }>("/api/instances", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-HarborGate-CSRF": csrf },
+    body: JSON.stringify(body),
+  });
 
 export const signIn = (serverId: ServerId, username: string, password: string) => request<{ adminName: string; csrf: string; serverId: ServerId }>("/api/session", {
   method: "POST",

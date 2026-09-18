@@ -1,6 +1,6 @@
 import { defineHandler } from "nitro";
 import { createError, readBody } from "nitro/h3";
-import { authenticate } from "../../lib/media-server";
+import { authenticate, CONFIGURED_CHILD_SERVER } from "../../lib/media-server";
 import { createSession } from "../../lib/session";
 import type { ServerId } from "../../lib/types";
 
@@ -10,6 +10,9 @@ export default defineHandler(async (event) => {
   const serverId = body?.serverId;
   if (!username || !body?.password || username.length > 100 || body.password.length > 300 || !serverId || !["emby", "jellyfin"].includes(serverId)) {
     throw createError({ statusCode: 400, statusMessage: "Enter valid administrator credentials and choose a server" });
+  }
+  if (CONFIGURED_CHILD_SERVER && serverId !== CONFIGURED_CHILD_SERVER) {
+    throw createError({ statusCode: 400, statusMessage: "This HarborGate instance is not configured for that server type" });
   }
   try {
     const auth = await authenticate(serverId, username, body.password);

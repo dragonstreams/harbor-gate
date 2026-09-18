@@ -3,14 +3,15 @@ import { ArrowRight, Eye, EyeOff, Loader2, LockKeyhole, Server, ShieldCheck } fr
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import type { ServerId } from "@/lib/harborgate";
+import type { RuntimeConfig, ServerId } from "@/lib/harborgate";
 
 interface LoginScreenProps {
+  runtime: RuntimeConfig | null;
   onLogin: (serverId: ServerId, username: string, password: string) => Promise<void>;
 }
 
-export function LoginScreen({ onLogin }: LoginScreenProps) {
-  const [serverId, setServerId] = useState<ServerId>("emby");
+export function LoginScreen({ runtime, onLogin }: LoginScreenProps) {
+  const [serverId, setServerId] = useState<ServerId>(runtime?.serverId ?? "emby");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -59,9 +60,9 @@ export function LoginScreen({ onLogin }: LoginScreenProps) {
           <div className="rounded-[2rem] border border-white/15 bg-white p-6 text-[#102a43] shadow-2xl shadow-[#06121f]/40 sm:p-9">
             <div className="mb-8 inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-[#e7f8f5] text-[#087d71]"><LockKeyhole className="h-5 w-5" /></div>
             <h2 className="text-3xl font-semibold tracking-[-0.035em]">Welcome back</h2>
-            <p className="mt-2 text-sm leading-6 text-slate-500">Choose a server and sign in with its administrator account.</p>
+            <p className="mt-2 text-sm leading-6 text-slate-500">{runtime?.mode === "child" ? `Sign in to manage ${runtime.serverHostname ?? "this media server"}.` : "Choose a server and sign in with its administrator account."}</p>
             <form onSubmit={submit} className="mt-8 space-y-5">
-              <fieldset className="space-y-2"><legend className="text-sm font-medium">Media server</legend><div className="grid grid-cols-2 gap-2 rounded-2xl bg-slate-100 p-1.5">{(["emby", "jellyfin"] as ServerId[]).map((id) => <button key={id} type="button" onClick={() => { setServerId(id); setError(""); }} className={`rounded-xl px-3 py-2.5 text-sm font-semibold transition ${serverId === id ? "bg-white text-[#087d71] shadow-sm" : "text-slate-500 hover:text-slate-800"}`}><span className={`mr-2 inline-block h-2 w-2 rounded-full ${id === "emby" ? "bg-emerald-500" : "bg-violet-500"}`} />{id === "emby" ? "Emby" : "Jellyfin"}</button>)}</div></fieldset>
+              {runtime?.mode !== "child" && <fieldset className="space-y-2"><legend className="text-sm font-medium">Media server</legend><div className="grid grid-cols-2 gap-2 rounded-2xl bg-slate-100 p-1.5">{(["emby", "jellyfin"] as ServerId[]).map((id) => <button key={id} type="button" onClick={() => { setServerId(id); setError(""); }} className={`rounded-xl px-3 py-2.5 text-sm font-semibold transition ${serverId === id ? "bg-white text-[#087d71] shadow-sm" : "text-slate-500 hover:text-slate-800"}`}><span className={`mr-2 inline-block h-2 w-2 rounded-full ${id === "emby" ? "bg-emerald-500" : "bg-violet-500"}`} />{id === "emby" ? "Emby" : "Jellyfin"}</button>)}</div></fieldset>}
               <div className="space-y-2"><Label htmlFor="username">{serverId === "emby" ? "Emby" : "Jellyfin"} username</Label><Input id="username" value={username} onChange={(event) => setUsername(event.target.value)} autoComplete="username" required className="h-12 rounded-xl border-slate-200 bg-slate-50 px-4 focus-visible:ring-[#0F9F8F]" placeholder="Administrator" /></div>
               <div className="space-y-2"><Label htmlFor="password">Password</Label><div className="relative"><Input id="password" value={password} onChange={(event) => setPassword(event.target.value)} type={showPassword ? "text" : "password"} autoComplete="current-password" required className="h-12 rounded-xl border-slate-200 bg-slate-50 px-4 pr-12 focus-visible:ring-[#0F9F8F]" /><button type="button" onClick={() => setShowPassword((value) => !value)} className="absolute right-3 top-1/2 -translate-y-1/2 rounded-lg p-1.5 text-slate-400 hover:bg-slate-200 hover:text-slate-700" aria-label={showPassword ? "Hide password" : "Show password"}>{showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}</button></div></div>
               {error && <p role="alert" className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>}

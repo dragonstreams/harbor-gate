@@ -15,6 +15,7 @@ export default defineHandler(async (event) => {
     serverId: session.serverId,
     serverLabel: server.label,
     serverHostname: server.hostname,
+    isMaster: process.env.HARBORGATE_MODE !== "child",
     users: users.map((user) => {
       const expiration = getExpiration(data, session.serverId, user.Id);
       return { ...user, expiration: expiration?.expiresAt ?? null, admin: expiration?.adminName ?? "" };

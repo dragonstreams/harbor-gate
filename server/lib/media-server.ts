@@ -1,9 +1,22 @@
 import type { EmbyPolicy, EmbyUser, ServerId } from "./types";
 
+const childServerType = process.env.HARBORGATE_MODE === "child" ? process.env.HARBORGATE_SERVER_TYPE as ServerId | undefined : undefined;
+const childServerUrl = process.env.HARBORGATE_SERVER_URL?.trim().replace(/\/+$/, "");
+
 export const MEDIA_SERVERS: Record<ServerId, { label: string; url: string; hostname: string }> = {
   emby: { label: "Emby", url: "https://33923.brr.savethecdn.com", hostname: "33923.brr.savethecdn.com" },
   jellyfin: { label: "Jellyfin", url: "https://36213.brr.savethecdn.com", hostname: "36213.brr.savethecdn.com" },
 };
+
+if (childServerType && childServerUrl && ["emby", "jellyfin"].includes(childServerType)) {
+  MEDIA_SERVERS[childServerType] = {
+    ...MEDIA_SERVERS[childServerType],
+    url: childServerUrl,
+    hostname: new URL(childServerUrl).host,
+  };
+}
+
+export const CONFIGURED_CHILD_SERVER = childServerType && childServerUrl ? childServerType : null;
 
 function clientHeader(serverId: ServerId) {
   return `MediaBrowser Client="HarborGate", Device="Secure Control Panel", DeviceId="harborgate-${serverId}", Version="1.0.0"`;
@@ -32,6 +45,8 @@ async function parseResponse<T>(serverId: ServerId, response: Response): Promise
 async function mediaFetch<T>(serverId: ServerId, token: string, path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${MEDIA_SERVERS[serverId].url}${path}`, {
     ...init,
+    redirect: "error",
+    signal: AbortSignal.timeout(15_000),
     headers: {
       "Content-Type": "application/json",
       ...authenticationHeaders(serverId, token),
@@ -41,15 +56,21 @@ async function mediaFetch<T>(serverId: ServerId, token: string, path: string, in
   return parseResponse<T>(serverId, response);
 }
 
-export async function authenticate(serverId: ServerId, username: string, password: string) {
-  const response = await fetch(`${MEDIA_SERVERS[serverId].url}/Users/AuthenticateByName`, {
+export async function authenticateAt(serverId: ServerId, serverUrl: string, username: string, password: string) {
+  const response = await fetch(`${serverUrl}/Users/AuthenticateByName`, {
     method: "POST",
+    redirect: "error",
+    signal: AbortSignal.timeout(15_000),
     headers: { "Content-Type": "application/json", ...authenticationHeaders(serverId) },
     body: JSON.stringify({ Username: username, Pw: password }),
   });
   const result = await parseResponse<{ AccessToken: string; User: EmbyUser }>(serverId, response);
   if (!result.User.Policy?.IsAdministrator) throw new Error(`This ${MEDIA_SERVERS[serverId].label} account is not an administrator`);
   return result;
+}
+
+export function authenticate(serverId: ServerId, username: string, password: string) {
+  return authenticateAt(serverId, MEDIA_SERVERS[serverId].url, username, password);
 }
 
 export const listUsers = (serverId: ServerId, token: string) => mediaFetch<EmbyUser[]>(serverId, token, "/Users");

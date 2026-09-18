@@ -43,7 +43,26 @@ export type ExpirationEvent = {
   action: "expired" | "reactivated";
 };
 
+export type ManagedInstance = {
+  id: string;
+  name: string;
+  slug: string;
+  serverId: ServerId;
+  serverUrl: string;
+  bunnyAppId: string;
+  publicUrl: string;
+  bunnyHostname: string;
+  createdAt: string;
+  status: "active" | "failed";
+  encryptedCredentials: {
+    iv: string;
+    tag: string;
+    ciphertext: string;
+  };
+};
+
 export type HarborData = {
   expirations: Record<string, ExpirationRecord>;
   events: ExpirationEvent[];
+  instances: ManagedInstance[];
 };
