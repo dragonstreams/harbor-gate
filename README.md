@@ -47,7 +47,7 @@ Use one replica because HarborGate administrator sessions are held in memory and
 | `BUNNY_API_KEY` | Master deployment | None | Bunny account API key; keep it server-side |
 | `HARBORGATE_CHILD_IMAGE` | Master deployment | None | Complete HarborGate container image URI and tag |
 | `BUNNY_REGION_ID` | Master deployment | None | Bunny region used for one-replica child applications |
-| `BUNNY_REGISTRY_ID` | Private images | None | Bunny Magic Containers registry identifier |
+| `BUNNY_REGISTRY_ID` | Master deployment | None | Required Bunny Magic Containers registry identifier for the child image |
 | `HARBORGATE_ENCRYPTION_KEY` | Master deployment | None | Stable 32-byte base64 or 64-character hex AES key |
 | `HARBORGATE_BASE_DOMAIN` | No | Bunny hostname | Base domain for automatic child subdomains |
 | `BUNNY_DNS_ZONE_ID` | With base domain | None | Bunny DNS zone where child CNAME records are created |

@@ -47,14 +47,15 @@ function configuration() {
   const apiKey = process.env.BUNNY_API_KEY?.trim();
   const image = process.env.HARBORGATE_CHILD_IMAGE?.trim();
   const regionId = process.env.BUNNY_REGION_ID?.trim();
-  if (!apiKey || !image || !regionId) {
-    throw new Error("Bunny deployment requires BUNNY_API_KEY, HARBORGATE_CHILD_IMAGE, and BUNNY_REGION_ID");
+  const registryId = process.env.BUNNY_REGISTRY_ID?.trim();
+  if (!apiKey || !image || !regionId || !registryId) {
+    throw new Error("Bunny deployment requires BUNNY_API_KEY, HARBORGATE_CHILD_IMAGE, BUNNY_REGION_ID, and BUNNY_REGISTRY_ID");
   }
   return {
     apiKey,
     image: parseImageReference(image),
     regionId,
-    registryId: process.env.BUNNY_REGISTRY_ID?.trim(),
+    registryId,
     baseDomain: process.env.HARBORGATE_BASE_DOMAIN?.trim().replace(/^\.+|\.+$/g, "").toLowerCase(),
     dnsZoneId: process.env.BUNNY_DNS_ZONE_ID?.trim(),
   };
@@ -79,6 +80,7 @@ export function getBunnyConfigurationStatus() {
     !process.env.BUNNY_API_KEY?.trim() && "BUNNY_API_KEY",
     !process.env.HARBORGATE_CHILD_IMAGE?.trim() && "HARBORGATE_CHILD_IMAGE",
     !process.env.BUNNY_REGION_ID?.trim() && "BUNNY_REGION_ID",
+    !process.env.BUNNY_REGISTRY_ID?.trim() && "BUNNY_REGISTRY_ID",
     !process.env.HARBORGATE_ENCRYPTION_KEY?.trim() && "HARBORGATE_ENCRYPTION_KEY",
   ].filter(Boolean) as string[];
   return { ready: missing.length === 0, missing };
@@ -117,8 +119,8 @@ export async function deployBunnyInstance(input: BunnyDeploymentInput) {
       readiness: { initialDelaySeconds: 5, periodSeconds: 10, timeoutSeconds: 5, failureThreshold: 3, successThreshold: 1, httpGet: { request: { path: "/api/health", portNumber: 8080 }, response: { expectedStatusCode: "200" } } },
       liveness: { initialDelaySeconds: 20, periodSeconds: 20, timeoutSeconds: 5, failureThreshold: 3, successThreshold: 1, httpGet: { request: { path: "/api/health", portNumber: 8080 }, response: { expectedStatusCode: "200" } } },
     },
+    imageRegistryId: config.registryId,
   };
-  if (config.registryId) container.imageRegistryId = config.registryId;
 
   const application = await bunnyRequest<BunnyApplication>("/mc/apps", {
     method: "POST",
