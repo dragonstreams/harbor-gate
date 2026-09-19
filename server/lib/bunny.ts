@@ -23,6 +23,26 @@ type BunnyEndpoint = {
 
 type BunnyEndpointList = { items?: BunnyEndpoint[] } | BunnyEndpoint[];
 
+function parseImageReference(value: string) {
+  const normalized = value.replace(/^https?:\/\//, "").replace(/^\/+/, "");
+  if (normalized.includes("@")) throw new Error("HARBORGATE_CHILD_IMAGE must use an image tag rather than a digest");
+  const lastSlash = normalized.lastIndexOf("/");
+  const lastColon = normalized.lastIndexOf(":");
+  const imageTag = lastColon > lastSlash ? normalized.slice(lastColon + 1) : "latest";
+  const repository = lastColon > lastSlash ? normalized.slice(0, lastColon) : normalized;
+  const parts = repository.split("/").filter(Boolean);
+  if (!parts.length || !imageTag) throw new Error("HARBORGATE_CHILD_IMAGE is not a valid container image reference");
+  if (parts[0].includes(".") || parts[0].includes(":") || parts[0] === "localhost") parts.shift();
+  const imageName = parts.pop();
+  if (!imageName) throw new Error("HARBORGATE_CHILD_IMAGE must include an image name");
+  return {
+    image: `${repository}:${imageTag}`,
+    imageName,
+    imageNamespace: parts.join("/") || "library",
+    imageTag,
+  };
+}
+
 function configuration() {
   const apiKey = process.env.BUNNY_API_KEY?.trim();
   const image = process.env.HARBORGATE_CHILD_IMAGE?.trim();
@@ -32,7 +52,7 @@ function configuration() {
   }
   return {
     apiKey,
-    image,
+    image: parseImageReference(image),
     regionId,
     registryId: process.env.BUNNY_REGISTRY_ID?.trim(),
     baseDomain: process.env.HARBORGATE_BASE_DOMAIN?.trim().replace(/^\.+|\.+$/g, "").toLowerCase(),
@@ -69,7 +89,11 @@ export async function deployBunnyInstance(input: BunnyDeploymentInput) {
   const tokenVariable = input.serverId === "emby" ? "HARBORGATE_EMBY_API_KEY" : "HARBORGATE_JELLYFIN_API_KEY";
   const container: Record<string, unknown> = {
     name: "harborgate",
-    image: config.image,
+    image: config.image.image,
+    imageName: config.image.imageName,
+    imageNamespace: config.image.imageNamespace,
+    imageTag: config.image.imageTag,
+    imagePullPolicy: "always",
     environmentVariables: [
       { name: "NODE_ENV", value: "production" },
       { name: "PORT", value: "8080" },
@@ -89,9 +113,9 @@ export async function deployBunnyInstance(input: BunnyDeploymentInput) {
       },
     }],
     probes: {
-      startup: { initialDelaySeconds: 5, periodSeconds: 10, timeoutSeconds: 5, failureThreshold: 12, successThreshold: 1, httpGet: { request: { path: "/api/health", portNumber: 8080 }, response: {} } },
-      readiness: { initialDelaySeconds: 5, periodSeconds: 10, timeoutSeconds: 5, failureThreshold: 3, successThreshold: 1, httpGet: { request: { path: "/api/health", portNumber: 8080 }, response: {} } },
-      liveness: { initialDelaySeconds: 20, periodSeconds: 20, timeoutSeconds: 5, failureThreshold: 3, successThreshold: 1, httpGet: { request: { path: "/api/health", portNumber: 8080 }, response: {} } },
+      startup: { initialDelaySeconds: 5, periodSeconds: 10, timeoutSeconds: 5, failureThreshold: 12, successThreshold: 1, httpGet: { request: { path: "/api/health", portNumber: 8080 }, response: { expectedStatusCode: "200" } } },
+      readiness: { initialDelaySeconds: 5, periodSeconds: 10, timeoutSeconds: 5, failureThreshold: 3, successThreshold: 1, httpGet: { request: { path: "/api/health", portNumber: 8080 }, response: { expectedStatusCode: "200" } } },
+      liveness: { initialDelaySeconds: 20, periodSeconds: 20, timeoutSeconds: 5, failureThreshold: 3, successThreshold: 1, httpGet: { request: { path: "/api/health", portNumber: 8080 }, response: { expectedStatusCode: "200" } } },
     },
   };
   if (config.registryId) container.imageRegistryId = config.registryId;
@@ -100,6 +124,7 @@ export async function deployBunnyInstance(input: BunnyDeploymentInput) {
     method: "POST",
     body: JSON.stringify({
       name: `harborgate-${input.slug}`,
+      runtimeType: "shared",
       autoScaling: { min: 1, max: 1 },
       regionSettings: {
         allowedRegionIds: [config.regionId],
