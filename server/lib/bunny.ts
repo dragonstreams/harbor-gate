@@ -84,8 +84,8 @@ export async function deployBunnyInstance(input: BunnyDeploymentInput) {
     endpoints: [{
       displayName: "HarborGate HTTPS",
       cdn: {
-        isSslEnabled: true,
-        portMappings: [{ containerPort: 8080, exposedPort: 80, protocols: ["http"] }],
+        isSslEnabled: false,
+        portMappings: [{ containerPort: 8080, exposedPort: 80, protocols: ["tcp"] }],
       },
     }],
     probes: {
