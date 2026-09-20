@@ -36,7 +36,6 @@ function parseImageReference(value: string) {
   const imageName = parts.pop();
   if (!imageName) throw new Error("HARBORGATE_CHILD_IMAGE must include an image name");
   return {
-    image: `${repository}:${imageTag}`,
     imageName,
     imageNamespace: parts.join("/") || "library",
     imageTag,
@@ -68,8 +67,15 @@ async function bunnyRequest<T>(path: string, init?: RequestInit): Promise<T> {
     headers: { AccessKey: apiKey, "Content-Type": "application/json", ...init?.headers },
   });
   if (!response.ok) {
-    const detail = (await response.text()).slice(0, 300);
-    throw new Error(detail || `Bunny request failed (${response.status})`);
+    const responseText = await response.text();
+    let detail = responseText;
+    try {
+      const parsed = JSON.parse(responseText) as { detail?: string; errors?: Array<{ field?: string; message?: string }> };
+      detail = parsed.errors?.map((error) => `${error.field ? `${error.field}: ` : ""}${error.message ?? "Invalid value"}`).join("; ") || parsed.detail || responseText;
+    } catch {
+      // Bunny occasionally returns plain text errors.
+    }
+    throw new Error(detail.slice(0, 600) || `Bunny request failed (${response.status})`);
   }
   if (response.status === 204 || response.headers.get("content-length") === "0") return undefined as T;
   return response.json() as Promise<T>;
@@ -88,10 +94,23 @@ export function getBunnyConfigurationStatus() {
 
 export async function deployBunnyInstance(input: BunnyDeploymentInput) {
   const config = configuration();
+  try {
+    await bunnyRequest<unknown>("/mc/registries/image-config", {
+      method: "POST",
+      body: JSON.stringify({
+        registryId: config.registryId,
+        imageNamespace: config.image.imageNamespace,
+        imageName: config.image.imageName,
+        tag: config.image.imageTag,
+      }),
+    });
+  } catch (error) {
+    throw new Error(`Bunny could not access ${config.image.imageNamespace}/${config.image.imageName}:${config.image.imageTag}. Verify HARBORGATE_CHILD_IMAGE, BUNNY_REGISTRY_ID, and the registry credentials. ${error instanceof Error ? error.message : ""}`.trim());
+  }
+
   const tokenVariable = input.serverId === "emby" ? "HARBORGATE_EMBY_API_KEY" : "HARBORGATE_JELLYFIN_API_KEY";
   const container: Record<string, unknown> = {
     name: "harborgate",
-    image: config.image.image,
     imageName: config.image.imageName,
     imageNamespace: config.image.imageNamespace,
     imageTag: config.image.imageTag,
