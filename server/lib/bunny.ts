@@ -28,6 +28,11 @@ type BunnyEndpoint = {
 
 type BunnyEndpointList = { items?: BunnyEndpoint[] } | BunnyEndpoint[];
 
+type BunnyLimits = {
+  maxNumberOfApplications?: number;
+  existingNumberOfApplications?: number;
+};
+
 function looksLikeGitHubToken(value: string) {
   return /^(?:ghp_|github_pat_)/i.test(value);
 }
@@ -116,6 +121,17 @@ export function getBunnyConfigurationStatus() {
 
 export async function deployBunnyInstance(input: BunnyDeploymentInput) {
   const config = configuration();
+  let limits: BunnyLimits;
+  try {
+    limits = await bunnyRequest<BunnyLimits>("/mc/limits");
+  } catch (error) {
+    throw new Error(`Bunny account limits could not be checked: ${error instanceof Error ? error.message : "Unknown Bunny error"}`);
+  }
+  if (typeof limits.maxNumberOfApplications === "number" && typeof limits.existingNumberOfApplications === "number" &&
+      limits.existingNumberOfApplications >= limits.maxNumberOfApplications) {
+    throw new Error(`Bunny application limit reached (${limits.existingNumberOfApplications}/${limits.maxNumberOfApplications}). Remove unused applications or upgrade the Bunny account before deploying a child instance.`);
+  }
+
   try {
     await bunnyRequest<unknown>("/mc/registries/image-config", {
       method: "POST",
