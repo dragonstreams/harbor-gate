@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import type { ServerId } from "./types";
 
 const BUNNY_API = "https://api.bunny.net";
@@ -159,28 +160,42 @@ export async function deployBunnyInstance(input: BunnyDeploymentInput) {
     imageRegistryId: config.registryId,
   };
 
-  const application = await bunnyRequest<BunnyApplication>("/mc/apps", {
-    method: "POST",
-    body: JSON.stringify({
-      name: `harborgate-${input.slug}`,
-      runtimeType: "shared",
-      autoScaling: { min: 1, max: 1 },
-      regionSettings: {
-        allowedRegionIds: [config.regionId],
-        requiredRegionIds: [config.regionId],
-        maxAllowedRegions: 1,
-        nodeSelectors: {},
-      },
-      terminationGracePeriodSeconds: 30,
-      containerTemplates: [container],
-      volumes: [{ name: "data", size: 1 }],
-    }),
-  });
+  let application: BunnyApplication;
+  try {
+    application = await bunnyRequest<BunnyApplication>("/mc/apps", {
+      method: "POST",
+      body: JSON.stringify({
+        name: `harborgate-${input.slug}-${randomBytes(3).toString("hex")}`,
+        runtimeType: "shared",
+        autoScaling: { min: 1, max: 1 },
+        regionSettings: {
+          allowedRegionIds: [config.regionId],
+          requiredRegionIds: [config.regionId],
+          maxAllowedRegions: 1,
+          nodeSelectors: {},
+        },
+        terminationGracePeriodSeconds: 30,
+        containerTemplates: [container],
+        volumes: [{ name: "data", size: 1 }],
+      }),
+    });
+  } catch (error) {
+    throw new Error(`Bunny application creation failed: ${error instanceof Error ? error.message : "Unknown Bunny error"}`);
+  }
   const appId = application.id ?? application.appId;
-  if (!appId) throw new Error("Bunny created the application but did not return its ID");
+  if (!appId) throw new Error("Bunny application creation succeeded but no application ID was returned");
 
-  await bunnyRequest<void>(`/mc/apps/${encodeURIComponent(appId)}/deploy`, { method: "POST" });
-  const listed = await bunnyRequest<BunnyEndpointList>(`/mc/apps/${encodeURIComponent(appId)}/endpoints`);
+  try {
+    await bunnyRequest<void>(`/mc/apps/${encodeURIComponent(appId)}/deploy`, { method: "POST" });
+  } catch (error) {
+    throw new Error(`Bunny application ${appId} was created, but deployment failed: ${error instanceof Error ? error.message : "Unknown Bunny error"}`);
+  }
+  let listed: BunnyEndpointList;
+  try {
+    listed = await bunnyRequest<BunnyEndpointList>(`/mc/apps/${encodeURIComponent(appId)}/endpoints`);
+  } catch (error) {
+    throw new Error(`Bunny application ${appId} was deployed, but its endpoint could not be read: ${error instanceof Error ? error.message : "Unknown Bunny error"}`);
+  }
   const endpoints = Array.isArray(listed) ? listed : listed.items ?? [];
   const endpoint = endpoints.find((item) => item.publicHost);
   if (!endpoint?.publicHost) throw new Error("Bunny deployed the application but did not return a public hostname");

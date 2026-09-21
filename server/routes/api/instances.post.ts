@@ -46,10 +46,14 @@ export default defineHandler(async (event) => {
     throw createError({ statusCode: 409, statusMessage: "An instance with this name already exists" });
   }
 
+  let stage = "validating the media server address";
   try {
     const serverUrl = await validatePublicServerUrl(body.serverUrl);
+    stage = "authenticating the media server administrator";
     const authenticated = await authenticateAt(body.serverId, serverUrl, username, body.password);
+    stage = "encrypting retained credentials";
     const encryptedCredentials = encryptCredentials(username, body.password);
+    stage = "creating the Bunny application";
     const deployment = await deployBunnyInstance({
       name,
       slug,
@@ -57,6 +61,7 @@ export default defineHandler(async (event) => {
       serverUrl,
       serverToken: authenticated.AccessToken,
     });
+    stage = "saving the deployed instance";
     const instance = {
       id: randomUUID(),
       name,
@@ -74,7 +79,7 @@ export default defineHandler(async (event) => {
     const { encryptedCredentials: _credentials, ...safeInstance } = instance;
     return { instance: safeInstance };
   } catch (error) {
-    const message = safeDeploymentError(error);
+    const message = `${stage}: ${safeDeploymentError(error)}`;
     console.error("HarborGate deployment failed:", message);
     setResponseStatus(event, 502);
     return { error: message };
