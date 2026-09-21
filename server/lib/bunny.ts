@@ -23,8 +23,20 @@ type BunnyEndpoint = {
 
 type BunnyEndpointList = { items?: BunnyEndpoint[] } | BunnyEndpoint[];
 
+function looksLikeGitHubToken(value: string) {
+  return /^(?:ghp_|github_pat_)/i.test(value);
+}
+
+function redactSecrets(value: string) {
+  return value
+    .replace(/github_pat_[A-Za-z0-9_]+/gi, "[REDACTED_GITHUB_TOKEN]")
+    .replace(/ghp_[A-Za-z0-9]+/gi, "[REDACTED_GITHUB_TOKEN]");
+}
+
 function parseImageReference(value: string) {
   const normalized = value.replace(/^https?:\/\//, "").replace(/^\/+/, "");
+  if (looksLikeGitHubToken(normalized)) throw new Error("HARBORGATE_CHILD_IMAGE must be a container image address, not a GitHub token");
+  if (!normalized.includes("/")) throw new Error("HARBORGATE_CHILD_IMAGE must include a registry, namespace, and image name");
   if (normalized.includes("@")) throw new Error("HARBORGATE_CHILD_IMAGE must use an image tag rather than a digest");
   const lastSlash = normalized.lastIndexOf("/");
   const lastColon = normalized.lastIndexOf(":");
@@ -49,6 +61,9 @@ function configuration() {
   const registryId = process.env.BUNNY_REGISTRY_ID?.trim();
   if (!apiKey || !image || !regionId || !registryId) {
     throw new Error("Bunny deployment requires BUNNY_API_KEY, HARBORGATE_CHILD_IMAGE, BUNNY_REGION_ID, and BUNNY_REGISTRY_ID");
+  }
+  if (looksLikeGitHubToken(registryId)) {
+    throw new Error("BUNNY_REGISTRY_ID must be 'github' or a Bunny registry UUID, not a GitHub token");
   }
   return {
     apiKey,
@@ -75,7 +90,7 @@ async function bunnyRequest<T>(path: string, init?: RequestInit): Promise<T> {
     } catch {
       // Bunny occasionally returns plain text errors.
     }
-    throw new Error(detail.slice(0, 600) || `Bunny request failed (${response.status})`);
+    throw new Error(redactSecrets(detail).slice(0, 600) || `Bunny request failed (${response.status})`);
   }
   if (response.status === 204 || response.headers.get("content-length") === "0") return undefined as T;
   return response.json() as Promise<T>;
@@ -105,7 +120,8 @@ export async function deployBunnyInstance(input: BunnyDeploymentInput) {
       }),
     });
   } catch (error) {
-    throw new Error(`Bunny could not access ${config.image.imageNamespace}/${config.image.imageName}:${config.image.imageTag}. Verify HARBORGATE_CHILD_IMAGE, BUNNY_REGISTRY_ID, and the registry credentials. ${error instanceof Error ? error.message : ""}`.trim());
+    const detail = error instanceof Error ? redactSecrets(error.message) : "";
+    throw new Error(`Bunny could not access the configured child image. Verify HARBORGATE_CHILD_IMAGE, BUNNY_REGISTRY_ID, and the linked registry credentials. ${detail}`.trim());
   }
 
   const tokenVariable = input.serverId === "emby" ? "HARBORGATE_EMBY_API_KEY" : "HARBORGATE_JELLYFIN_API_KEY";
