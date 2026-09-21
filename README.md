@@ -2,17 +2,18 @@
 
 A secure Emby and Jellyfin user lifecycle control panel, packaged for Bunny.net Magic Containers.
 
-## Published container image
+## Published container images
 
-The GitHub Actions workflow at `.github/workflows/publish-container.yml` builds the Dockerfile and publishes a private image to GitHub Container Registry whenever `main` is updated. It can also be started manually from the repository's **Actions** tab.
+The GitHub Actions workflow at `.github/workflows/publish-container.yml` builds separate linux/amd64 master and child images and publishes both to GitHub Container Registry whenever `main` is updated. It can also be started manually from the repository's **Actions** tab.
 
-The image name is:
+The image names are:
 
 ```text
 ghcr.io/<github-owner>/<repository>:latest
+ghcr.io/<github-owner>/<repository>-child:latest
 ```
 
-GitHub image names are lowercase. The completed workflow displays the exact image URI in its run summary.
+The master uses the first image. Set `HARBORGATE_CHILD_IMAGE` to the second image; it is built from `Dockerfile.child` and defaults to `HARBORGATE_MODE=child`. GitHub image names are lowercase. The completed workflow displays both exact image URIs in its run summary.
 
 For a private package, connect `ghcr.io` in Bunny **Image Registries** using the GitHub username and a personal access token with `read:packages`. If the repository belongs to an organization with SSO, authorize that token for the organization. Bunny may require the full image URI to be entered rather than listing private packages automatically.
 
@@ -45,7 +46,7 @@ Use one replica because HarborGate administrator sessions are held in memory and
 | `HARBORGATE_JELLYFIN_API_KEY` | Recommended | None | Jellyfin API key for unattended expiration enforcement |
 | `HARBORGATE_MODE` | No | `master` | Set to `child` only on automatically provisioned instances |
 | `BUNNY_API_KEY` | Master deployment | None | Bunny account API key; keep it server-side |
-| `HARBORGATE_CHILD_IMAGE` | Master deployment | None | Complete HarborGate container image URI and tag |
+| `HARBORGATE_CHILD_IMAGE` | Master deployment | None | Dedicated `ghcr.io/<owner>/<repository>-child:<tag>` image |
 | `BUNNY_REGION_ID` | Master deployment | None | Bunny region used for one-replica child applications |
 | `BUNNY_REGISTRY_ID` | Master deployment | None | Required Bunny Magic Containers registry identifier for the child image |
 | `HARBORGATE_ENCRYPTION_KEY` | Master deployment | None | Stable 32-byte base64 or 64-character hex AES key |

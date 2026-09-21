@@ -14,5 +14,7 @@ jobs:
 
     steps:
     - uses: actions/checkout@v4
-    - name: Build the Docker image
-      run: docker build . --file Dockerfile --tag my-image-name:$(date +%s)
+    - name: Build the HarborGate master image
+      run: docker build . --file Dockerfile --tag harborgate-master:ci
+    - name: Build the HarborGate child image
+      run: docker build . --file Dockerfile.child --tag harborgate-child:ci

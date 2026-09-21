@@ -18,11 +18,12 @@ concurrency:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}
+  MASTER_IMAGE_NAME: ${{ github.repository }}
+  CHILD_IMAGE_NAME: ${{ github.repository }}-child
 
 jobs:
   publish:
-    name: Build and publish image
+    name: Build and publish master and child images
     runs-on: ubuntu-latest
 
     steps:
@@ -39,31 +40,56 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Generate container metadata
-        id: meta
+      - name: Generate master image metadata
+        id: master_meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          images: ${{ env.REGISTRY }}/${{ env.MASTER_IMAGE_NAME }}
           tags: |
             type=raw,value=latest,enable={{is_default_branch}}
             type=ref,event=tag
             type=sha,prefix=sha-
 
-      - name: Build and publish HarborGate
+      - name: Generate child image metadata
+        id: child_meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.CHILD_IMAGE_NAME }}
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=ref,event=tag
+            type=sha,prefix=sha-
+
+      - name: Build and publish HarborGate master
         uses: docker/build-push-action@v6
         with:
           context: .
           file: ./Dockerfile
           platforms: linux/amd64
           push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          tags: ${{ steps.master_meta.outputs.tags }}
+          labels: ${{ steps.master_meta.outputs.labels }}
+          cache-from: type=gha,scope=master
+          cache-to: type=gha,mode=max,scope=master
+          provenance: false
+
+      - name: Build and publish HarborGate child
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile.child
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.child_meta.outputs.tags }}
+          labels: ${{ steps.child_meta.outputs.labels }}
+          cache-from: type=gha,scope=child
+          cache-to: type=gha,mode=max,scope=child
           provenance: false
 
       - name: Publish deployment summary
         run: |
-          echo "## HarborGate image published" >> "$GITHUB_STEP_SUMMARY"
-          echo "Use this image in Bunny Magic Containers:" >> "$GITHUB_STEP_SUMMARY"
-          echo '`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest`' >> "$GITHUB_STEP_SUMMARY"
+          echo "## HarborGate images published" >> "$GITHUB_STEP_SUMMARY"
+          echo "Master image:" >> "$GITHUB_STEP_SUMMARY"
+          echo '`${{ env.REGISTRY }}/${{ env.MASTER_IMAGE_NAME }}:latest`' >> "$GITHUB_STEP_SUMMARY"
+          echo "Child image for HARBORGATE_CHILD_IMAGE:" >> "$GITHUB_STEP_SUMMARY"
+          echo '`${{ env.REGISTRY }}/${{ env.CHILD_IMAGE_NAME }}:latest`' >> "$GITHUB_STEP_SUMMARY"
