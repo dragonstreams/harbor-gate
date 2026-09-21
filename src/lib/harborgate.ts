@@ -76,8 +76,8 @@ export type InstancesData = {
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, init);
   if (!response.ok) {
-    const error = await response.json().catch(() => null) as { statusMessage?: string; message?: string } | null;
-    throw new Error(error?.statusMessage || error?.message || "Something went wrong");
+    const error = await response.json().catch(() => null) as { error?: string; statusMessage?: string; message?: string; data?: { message?: string } } | null;
+    throw new Error(error?.error || error?.data?.message || error?.statusMessage || error?.message || "Something went wrong");
   }
   return response.json() as Promise<T>;
 }

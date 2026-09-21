@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { defineHandler } from "nitro";
-import { createError, readBody } from "nitro/h3";
+import { createError, readBody, setResponseStatus } from "nitro/h3";
 import { deployBunnyInstance, getBunnyConfigurationStatus } from "../../lib/bunny";
 import { encryptCredentials, validatePublicServerUrl } from "../../lib/instance-security";
 import { authenticateAt } from "../../lib/media-server";
@@ -10,6 +10,15 @@ import type { ServerId } from "../../lib/types";
 
 function instanceSlug(name: string) {
   return name.toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 42);
+}
+
+function safeDeploymentError(error: unknown) {
+  const message = error instanceof Error ? error.message : "Unable to deploy HarborGate instance";
+  return message
+    .replace(/github_pat_[A-Za-z0-9_]+/gi, "[REDACTED_GITHUB_TOKEN]")
+    .replace(/ghp_[A-Za-z0-9]+/gi, "[REDACTED_GITHUB_TOKEN]")
+    .replace(/[\u0000-\u001f\u007f]+/g, " ")
+    .slice(0, 600);
 }
 
 export default defineHandler(async (event) => {
@@ -65,9 +74,9 @@ export default defineHandler(async (event) => {
     const { encryptedCredentials: _credentials, ...safeInstance } = instance;
     return { instance: safeInstance };
   } catch (error) {
-    throw createError({
-      statusCode: 502,
-      statusMessage: error instanceof Error ? error.message : "Unable to deploy HarborGate instance",
-    });
+    const message = safeDeploymentError(error);
+    console.error("HarborGate deployment failed:", message);
+    setResponseStatus(event, 502);
+    return { error: message };
   }
 });

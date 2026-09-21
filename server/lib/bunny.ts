@@ -92,8 +92,10 @@ async function bunnyRequest<T>(path: string, init?: RequestInit): Promise<T> {
     }
     throw new Error(redactSecrets(detail).slice(0, 600) || `Bunny request failed (${response.status})`);
   }
-  if (response.status === 204 || response.headers.get("content-length") === "0") return undefined as T;
-  return response.json() as Promise<T>;
+  if (response.status === 204) return undefined as T;
+  const responseText = await response.text();
+  if (!responseText.trim()) return undefined as T;
+  return JSON.parse(responseText) as T;
 }
 
 export function getBunnyConfigurationStatus() {
