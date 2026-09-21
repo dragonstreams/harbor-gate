@@ -14,7 +14,12 @@ export type BunnyDeploymentInput = {
 type BunnyApplication = {
   id?: string;
   appId?: string;
+  name?: string;
   containerTemplates?: BunnyContainer[];
+};
+
+type BunnyApplicationList = {
+  items?: BunnyApplication[];
 };
 
 type BunnyContainer = {
@@ -217,12 +222,14 @@ export async function deployBunnyInstance(input: BunnyDeploymentInput) {
     imageRegistryId: config.registryId,
   };
 
-  let application: BunnyApplication;
+  const applicationName = `harborgate-${input.slug}-${randomBytes(3).toString("hex")}`;
+  let application: BunnyApplication | undefined;
+  let creationError: unknown;
   try {
     application = await bunnyRequest<BunnyApplication>("/mc/apps", {
       method: "POST",
       body: JSON.stringify({
-        name: `harborgate-${input.slug}-${randomBytes(3).toString("hex")}`,
+        name: applicationName,
         runtimeType: "shared",
         autoScaling: { min: 1, max: 1 },
         regionSettings: {
@@ -237,10 +244,18 @@ export async function deployBunnyInstance(input: BunnyDeploymentInput) {
       }),
     });
   } catch (error) {
+    creationError = error;
+    for (let attempt = 0; attempt < 3 && !application; attempt += 1) {
+      if (attempt > 0) await new Promise((resolve) => setTimeout(resolve, 500));
+      const applications = await bunnyRequest<BunnyApplicationList>("/mc/apps?limit=100").catch(() => ({ items: [] }));
+      application = applications.items?.find((item) => item.name === applicationName);
+    }
+  }
+  if (!application) {
     const usage = typeof limits.existingNumberOfApplications === "number" && typeof limits.maxNumberOfApplications === "number"
       ? ` Bunny reports ${limits.existingNumberOfApplications}/${limits.maxNumberOfApplications} application slots in use.`
       : "";
-    throw new Error(`Bunny application creation failed after image metadata and digest validation.${usage} ${error instanceof Error ? error.message : "Unknown Bunny error"}`);
+    throw new Error(`Bunny application creation failed after image metadata and digest validation.${usage} ${creationError instanceof Error ? creationError.message : "Unknown Bunny error"}`);
   }
   const appId = application.id ?? application.appId;
   if (!appId) throw new Error("Bunny application creation succeeded but no application ID was returned");
