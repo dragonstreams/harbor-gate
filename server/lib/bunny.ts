@@ -14,7 +14,10 @@ export type BunnyDeploymentInput = {
 type BunnyApplication = {
   id?: string;
   appId?: string;
-  containerTemplates?: Array<{ id?: string }>;
+};
+
+type BunnyContainer = {
+  id?: string;
 };
 
 type BunnyEndpoint = {
@@ -175,8 +178,8 @@ export async function deployBunnyInstance(input: BunnyDeploymentInput) {
           nodeSelectors: {},
         },
         terminationGracePeriodSeconds: 30,
-        containerTemplates: [container],
-        volumes: [{ name: "data", size: 1 }],
+        containerTemplates: [],
+        volumes: [],
       }),
     });
   } catch (error) {
@@ -186,9 +189,34 @@ export async function deployBunnyInstance(input: BunnyDeploymentInput) {
   if (!appId) throw new Error("Bunny application creation succeeded but no application ID was returned");
 
   try {
+    await bunnyRequest<void>(`/mc/apps/${encodeURIComponent(appId)}`, {
+      method: "PATCH",
+      body: JSON.stringify({ volumes: [{ name: "data", size: 1 }] }),
+    });
+  } catch (error) {
+    await bunnyRequest<void>(`/mc/apps/${encodeURIComponent(appId)}`, { method: "DELETE" }).catch(() => undefined);
+    throw new Error(`Bunny application ${appId} was created, but its persistent volume could not be added: ${error instanceof Error ? error.message : "Unknown Bunny error"}`);
+  }
+
+  let createdContainer: BunnyContainer;
+  try {
+    createdContainer = await bunnyRequest<BunnyContainer>(`/mc/apps/${encodeURIComponent(appId)}/containers`, {
+      method: "POST",
+      body: JSON.stringify(container),
+    });
+  } catch (error) {
+    await bunnyRequest<void>(`/mc/apps/${encodeURIComponent(appId)}`, { method: "DELETE" }).catch(() => undefined);
+    throw new Error(`Bunny application ${appId} was created, but its HarborGate container could not be added: ${error instanceof Error ? error.message : "Unknown Bunny error"}`);
+  }
+  if (!createdContainer?.id) {
+    await bunnyRequest<void>(`/mc/apps/${encodeURIComponent(appId)}`, { method: "DELETE" }).catch(() => undefined);
+    throw new Error(`Bunny application ${appId} was created, but container creation returned no container ID`);
+  }
+
+  try {
     await bunnyRequest<void>(`/mc/apps/${encodeURIComponent(appId)}/deploy`, { method: "POST" });
   } catch (error) {
-    throw new Error(`Bunny application ${appId} was created, but deployment failed: ${error instanceof Error ? error.message : "Unknown Bunny error"}`);
+    throw new Error(`Bunny application ${appId} and container ${createdContainer.id} were created, but deployment failed: ${error instanceof Error ? error.message : "Unknown Bunny error"}`);
   }
   let listed: BunnyEndpointList;
   try {
