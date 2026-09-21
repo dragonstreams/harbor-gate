@@ -33,6 +33,14 @@ type BunnyLimits = {
   existingNumberOfApplications?: number;
 };
 
+type BunnyImageConfig = {
+  image?: string;
+};
+
+type BunnyImageDigest = {
+  imageDigest?: string;
+};
+
 function looksLikeGitHubToken(value: string) {
   return /^(?:ghp_|github_pat_)/i.test(value);
 }
@@ -132,8 +140,9 @@ export async function deployBunnyInstance(input: BunnyDeploymentInput) {
     throw new Error(`Bunny application limit reached (${limits.existingNumberOfApplications}/${limits.maxNumberOfApplications}). Remove unused applications or upgrade the Bunny account before deploying a child instance.`);
   }
 
+  let imageConfig: BunnyImageConfig;
   try {
-    await bunnyRequest<unknown>("/mc/registries/image-config", {
+    imageConfig = await bunnyRequest<BunnyImageConfig>("/mc/registries/image-config", {
       method: "POST",
       body: JSON.stringify({
         registryId: config.registryId,
@@ -146,13 +155,31 @@ export async function deployBunnyInstance(input: BunnyDeploymentInput) {
     const detail = error instanceof Error ? redactSecrets(error.message) : "";
     throw new Error(`Bunny could not access the configured child image. Verify HARBORGATE_CHILD_IMAGE, BUNNY_REGISTRY_ID, and the linked registry credentials. ${detail}`.trim());
   }
+  const canonicalImage = imageConfig?.image || `${config.image.imageNamespace}/${config.image.imageName}:${config.image.imageTag}`;
+  let imageDigest: string | undefined;
+  try {
+    const digest = await bunnyRequest<BunnyImageDigest>("/mc/registries/digest", {
+      method: "POST",
+      body: JSON.stringify({
+        registryId: config.registryId,
+        imageNamespace: config.image.imageNamespace,
+        imageName: config.image.imageName,
+        tag: config.image.imageTag,
+      }),
+    });
+    imageDigest = digest?.imageDigest;
+  } catch (error) {
+    throw new Error(`Bunny could not resolve the child image digest: ${error instanceof Error ? redactSecrets(error.message) : "Unknown Bunny error"}`);
+  }
 
   const tokenVariable = input.serverId === "emby" ? "HARBORGATE_EMBY_API_KEY" : "HARBORGATE_JELLYFIN_API_KEY";
   const container: Record<string, unknown> = {
     name: "harborgate",
+    image: canonicalImage,
     imageName: config.image.imageName,
     imageNamespace: config.image.imageNamespace,
     imageTag: config.image.imageTag,
+    ...(imageDigest ? { imageDigest } : {}),
     imagePullPolicy: "always",
     environmentVariables: [
       { name: "NODE_ENV", value: "production" },
@@ -181,9 +208,11 @@ export async function deployBunnyInstance(input: BunnyDeploymentInput) {
   };
   const minimalContainer = {
     name: "harborgate",
+    image: canonicalImage,
     imageName: config.image.imageName,
     imageNamespace: config.image.imageNamespace,
     imageTag: config.image.imageTag,
+    ...(imageDigest ? { imageDigest } : {}),
     imagePullPolicy: "always",
     imageRegistryId: config.registryId,
   };
@@ -208,7 +237,10 @@ export async function deployBunnyInstance(input: BunnyDeploymentInput) {
       }),
     });
   } catch (error) {
-    throw new Error(`Bunny application creation failed: ${error instanceof Error ? error.message : "Unknown Bunny error"}`);
+    const usage = typeof limits.existingNumberOfApplications === "number" && typeof limits.maxNumberOfApplications === "number"
+      ? ` Bunny reports ${limits.existingNumberOfApplications}/${limits.maxNumberOfApplications} application slots in use.`
+      : "";
+    throw new Error(`Bunny application creation failed after image metadata and digest validation.${usage} ${error instanceof Error ? error.message : "Unknown Bunny error"}`);
   }
   const appId = application.id ?? application.appId;
   if (!appId) throw new Error("Bunny application creation succeeded but no application ID was returned");
