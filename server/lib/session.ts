@@ -7,7 +7,7 @@ import type { ServerId } from "./types";
 const COOKIE_NAME = "harborgate_session";
 const SESSION_TTL = 12 * 60 * 60 * 1000;
 
-type Session = { token: string; adminName: string; csrf: string; serverId: ServerId; serverUrl: string; expiresAt: number };
+type Session = { token: string; adminName: string; csrf: string; serverId: ServerId; serverUrl: string; machineIdentifier?: string; expiresAt: number };
 const sessions = new Map<string, Session>();
 
 function secureCookie(event: H3Event) {
@@ -15,10 +15,10 @@ function secureCookie(event: H3Event) {
   return process.env.NODE_ENV === "production" || forwardedProtocol === "https" || getRequestURL(event).protocol === "https:";
 }
 
-export function createSession(event: H3Event, token: string, adminName: string, serverId: ServerId, serverUrl: string) {
+export function createSession(event: H3Event, token: string, adminName: string, serverId: ServerId, serverUrl: string, machineIdentifier?: string) {
   const id = randomBytes(32).toString("hex");
   const csrf = randomBytes(24).toString("base64url");
-  sessions.set(id, { token, adminName, csrf, serverId, serverUrl, expiresAt: Date.now() + SESSION_TTL });
+  sessions.set(id, { token, adminName, csrf, serverId, serverUrl, machineIdentifier, expiresAt: Date.now() + SESSION_TTL });
   setCookie(event, COOKIE_NAME, id, {
     httpOnly: true,
     sameSite: "strict",
@@ -53,7 +53,7 @@ export function getActiveConnections() {
   const connections = new Map<string, { serverId: ServerId; serverUrl: string; token: string }>();
   for (const [id, session] of sessions) {
     if (session.expiresAt < now) sessions.delete(id);
-    else {
+    else if (session.serverId !== "plex") {
       const key = `${session.serverId}:${session.serverUrl}`;
       if (!connections.has(key)) connections.set(key, { serverId: session.serverId, serverUrl: session.serverUrl, token: session.token });
     }

@@ -33,9 +33,10 @@ export default defineHandler(async (event) => {
 
   const body = await readBody<{ name?: string; serverId?: ServerId; serverUrl?: string; username?: string; password?: string }>(event);
   const name = body?.name?.trim();
-  const username = body?.username?.trim();
-  if (!name || name.length > 80 || !username || username.length > 100 || !body?.password || body.password.length > 300 ||
-      !body.serverUrl || !body.serverId || !["emby", "jellyfin"].includes(body.serverId)) {
+  const username = body?.username?.trim() ?? "";
+  const password = body?.password ?? "";
+  const validCredentials = body?.serverId === "plex" || (username.length > 0 && username.length <= 100 && password.length > 0 && password.length <= 300);
+  if (!name || name.length > 80 || !validCredentials || !body.serverUrl || !body.serverId || !["emby", "jellyfin", "plex"].includes(body.serverId)) {
     throw createError({ statusCode: 400, statusMessage: "Enter a name, server address, and valid administrator credentials" });
   }
   const slug = instanceSlug(name);
@@ -51,16 +52,16 @@ export default defineHandler(async (event) => {
     const validatedServerUrl = await validatePublicServerUrl(body.serverUrl);
     const serverUrl = normalizeMediaServerUrl(body.serverId, validatedServerUrl);
     stage = "authenticating the media server administrator";
-    const authenticated = await authenticateAt(body.serverId, serverUrl, username, body.password);
+    const authenticated = body.serverId === "plex" ? null : await authenticateAt(body.serverId, serverUrl, username, password);
     stage = "encrypting retained credentials";
-    const encryptedCredentials = encryptCredentials(username, body.password);
+    const encryptedCredentials = encryptCredentials(username, password);
     stage = "creating the Bunny application";
     const deployment = await deployBunnyInstance({
       name,
       slug,
       serverId: body.serverId,
       serverUrl,
-      serverToken: authenticated.AccessToken,
+      serverToken: authenticated?.AccessToken,
     });
     stage = "saving the deployed instance";
     const instance = {

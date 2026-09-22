@@ -3,6 +3,7 @@ import { defineHandler } from "nitro";
 import { createError, readBody } from "nitro/h3";
 import { createUser, deleteUser, listFeatures, listUsers, setPolicy, setUserPassword, updateUser } from "../../lib/media-server";
 import { enforceExpirations } from "../../lib/expiration";
+import { listPlexLibraryIds, listPlexShares, restorePlexShare, revokePlexShare } from "../../lib/plex";
 import { requireSession } from "../../lib/session";
 import { expirationKey, getExpiration, readData, updateData } from "../../lib/store";
 import type { EmbyPolicy } from "../../lib/types";
@@ -30,6 +31,41 @@ export default defineHandler(async (event) => {
   const { serverId, serverUrl, token } = session;
   const body = await readBody<RequestBody>(event);
   const name = body?.name?.trim();
+
+  if (serverId === "plex") {
+    if (!session.machineIdentifier || body?.operation !== "update" || !body.id || typeof body.policy?.IsDisabled !== "boolean") {
+      throw createError({ statusCode: 400, statusMessage: "Plex shared users only support enabling or disabling access" });
+    }
+    const machineIdentifier = session.machineIdentifier;
+    const key = `${machineIdentifier}:${body.id}`;
+    const activeShares = await listPlexShares(token, machineIdentifier);
+    const activeShare = activeShares.find((share) => share.invitedId === body.id);
+    if (body.policy.IsDisabled) {
+      if (!activeShare) return { ok: true };
+      const librarySectionIds = activeShare.librarySectionIds.length
+        ? activeShare.librarySectionIds
+        : await listPlexLibraryIds(token, serverUrl);
+      if (!librarySectionIds.length) throw createError({ statusCode: 502, statusMessage: "Plex did not return the libraries required to restore this share later" });
+      await revokePlexShare(token, machineIdentifier, activeShare.id);
+      await updateData((data) => {
+        data.plexShares[key] = {
+          machineIdentifier,
+          invitedId: activeShare.invitedId,
+          name: activeShare.name,
+          email: activeShare.email,
+          librarySectionIds,
+          enabled: false,
+        };
+      });
+    } else {
+      if (activeShare) return { ok: true };
+      const record = (await readData()).plexShares[key];
+      if (!record) throw createError({ statusCode: 404, statusMessage: "The previous Plex share permissions were not found" });
+      await restorePlexShare(token, machineIdentifier, record.invitedId, record.librarySectionIds);
+      await updateData((data) => { data.plexShares[key] = { ...record, enabled: true }; });
+    }
+    return { ok: true };
+  }
 
   if (body?.operation === "create") {
     if (!name || name.length > 100) throw createError({ statusCode: 400, statusMessage: "Enter a username" });

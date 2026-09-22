@@ -8,7 +8,7 @@ export type BunnyDeploymentInput = {
   slug: string;
   serverId: ServerId;
   serverUrl: string;
-  serverToken: string;
+  serverToken?: string;
 };
 
 type BunnyApplication = {
@@ -194,7 +194,7 @@ export async function deployBunnyInstance(input: BunnyDeploymentInput) {
       { name: "HARBORGATE_MODE", value: "child" },
       { name: "HARBORGATE_SERVER_TYPE", value: input.serverId },
       { name: "HARBORGATE_SERVER_URL", value: input.serverUrl },
-      { name: tokenVariable, value: input.serverToken },
+      ...(input.serverId !== "plex" && input.serverToken ? [{ name: tokenVariable, value: input.serverToken }] : []),
     ],
     volumeMounts: [{ name: "data", mountPath: "/data" }],
     endpoints: [{

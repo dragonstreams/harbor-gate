@@ -10,7 +10,7 @@ export default defineHandler(async (event) => {
   const username = body?.username?.trim();
   const serverId = body?.serverId;
   if (!username || !body?.password || username.length > 100 || body.password.length > 300 || !serverId || !["emby", "jellyfin"].includes(serverId)) {
-    throw createError({ statusCode: 400, statusMessage: "Enter valid administrator credentials and choose a server" });
+    throw createError({ statusCode: 400, statusMessage: serverId === "plex" ? "Use Sign in with Plex to continue" : "Enter valid administrator credentials and choose a server" });
   }
   const isChild = process.env.HARBORGATE_MODE === "child";
   if (CONFIGURED_CHILD_SERVER && serverId !== CONFIGURED_CHILD_SERVER) {

@@ -17,9 +17,10 @@ const childServerUrl = childServerType && configuredChildServerUrl ? normalizeMe
 export const MEDIA_SERVERS: Record<ServerId, { label: string; url: string; hostname: string }> = {
   emby: { label: "Emby", url: "https://33923.brr.savethecdn.com", hostname: "33923.brr.savethecdn.com" },
   jellyfin: { label: "Jellyfin", url: "https://36213.brr.savethecdn.com", hostname: "36213.brr.savethecdn.com" },
+  plex: { label: "Plex", url: childServerUrl || "https://app.plex.tv", hostname: childServerUrl ? new URL(childServerUrl).host : "app.plex.tv" },
 };
 
-if (childServerType && childServerUrl && ["emby", "jellyfin"].includes(childServerType)) {
+if (childServerType && childServerUrl && ["emby", "jellyfin", "plex"].includes(childServerType)) {
   MEDIA_SERVERS[childServerType] = {
     ...MEDIA_SERVERS[childServerType],
     url: childServerUrl,

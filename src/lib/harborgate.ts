@@ -1,4 +1,4 @@
-export type ServerId = "emby" | "jellyfin";
+export type ServerId = "emby" | "jellyfin" | "plex";
 
 export type UserPolicy = {
   IsAdministrator?: boolean;
@@ -100,6 +100,18 @@ export const signIn = (serverId: ServerId, serverUrl: string, username: string, 
   method: "POST",
   headers: { "Content-Type": "application/json" },
   body: JSON.stringify({ serverId, serverUrl, username, password }),
+});
+
+export const createPlexPin = (serverUrl: string) => request<{ pinId: number; state: string; authUrl: string }>("/api/plex/pin", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ serverUrl }),
+});
+
+export const completePlexSignIn = (pinId: number, state: string) => request<{ pending: boolean; adminName?: string; csrf?: string; serverId?: ServerId }>("/api/plex/session", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ pinId, state }),
 });
 
 export const mutateUser = (csrf: string, body: object) => request<{ ok: boolean }>("/api/users", {

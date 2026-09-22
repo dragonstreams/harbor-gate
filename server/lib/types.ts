@@ -1,4 +1,4 @@
-export type ServerId = "emby" | "jellyfin";
+export type ServerId = "emby" | "jellyfin" | "plex";
 
 export type EmbyPolicy = {
   IsAdministrator?: boolean;
@@ -61,8 +61,18 @@ export type ManagedInstance = {
   };
 };
 
+export type PlexShareRecord = {
+  machineIdentifier: string;
+  invitedId: string;
+  name: string;
+  email: string;
+  librarySectionIds: number[];
+  enabled: boolean;
+};
+
 export type HarborData = {
   expirations: Record<string, ExpirationRecord>;
   events: ExpirationEvent[];
   instances: ManagedInstance[];
+  plexShares: Record<string, PlexShareRecord>;
 };

@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { Dashboard } from "@/components/Dashboard";
 import { LoginScreen } from "@/components/LoginScreen";
-import { getDashboard, getRuntimeConfig, mutateUser, signIn, signOut, type DashboardData, type RuntimeConfig, type ServerId } from "@/lib/harborgate";
+import { completePlexSignIn, createPlexPin, getDashboard, getRuntimeConfig, mutateUser, signIn, signOut, type DashboardData, type RuntimeConfig, type ServerId } from "@/lib/harborgate";
 
 const Index = () => {
   const [data, setData] = useState<DashboardData | null>(null);
@@ -26,6 +26,28 @@ const Index = () => {
     await refresh();
   }
 
+  async function plexLogin(serverUrl: string) {
+    const popup = window.open("about:blank", "harborgate-plex-auth", "popup,width=720,height=760");
+    try {
+      const pin = await createPlexPin(serverUrl);
+      if (popup) popup.location.href = pin.authUrl;
+      else window.open(pin.authUrl, "_blank", "noopener,noreferrer");
+      for (let attempt = 0; attempt < 150; attempt += 1) {
+        await new Promise((resolve) => window.setTimeout(resolve, 2_000));
+        const result = await completePlexSignIn(pin.pinId, pin.state);
+        if (!result.pending) {
+          popup?.close();
+          await refresh();
+          return;
+        }
+      }
+      throw new Error("Plex authorization timed out. Please try again.");
+    } catch (error) {
+      popup?.close();
+      throw error;
+    }
+  }
+
   async function logout() {
     if (data) await signOut(data.csrf).catch(() => undefined);
     setData(null);
@@ -35,7 +57,7 @@ const Index = () => {
     return <div className="flex min-h-screen items-center justify-center bg-[#0b2135] text-white"><div className="text-center"><img src="/assets/harborgate-logo.png" alt="HarborGate" className="mx-auto mb-5 h-16 w-16 rounded-2xl" /><Loader2 className="mx-auto h-5 w-5 animate-spin text-[#55d7c6]" /><p className="mt-3 text-sm text-slate-400">Securing your harbor…</p></div></div>;
   }
 
-  if (!data) return <LoginScreen runtime={runtime} onLogin={login} />;
+  if (!data) return <LoginScreen runtime={runtime} onLogin={login} onPlexLogin={plexLogin} />;
 
   return <Dashboard data={data} onRefresh={refresh} onMutate={async (body) => { await mutateUser(data.csrf, body); }} onLogout={logout} />;
 };
