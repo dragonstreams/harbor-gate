@@ -35,8 +35,10 @@ export default defineHandler(async (event) => {
   const name = body?.name?.trim();
   const username = body?.username?.trim() ?? "";
   const password = body?.password ?? "";
-  const validCredentials = body?.serverId === "plex" || (username.length > 0 && username.length <= 100 && password.length > 0 && password.length <= 300);
-  if (!name || name.length > 80 || !validCredentials || !body.serverUrl || !body.serverId || !["emby", "jellyfin", "plex"].includes(body.serverId)) {
+  const isPlex = body?.serverId === "plex";
+  const validCredentials = isPlex || (username.length > 0 && username.length <= 100 && password.length > 0 && password.length <= 300);
+  const validAddress = isPlex || Boolean(body?.serverUrl);
+  if (!name || name.length > 80 || !validCredentials || !validAddress || !body.serverId || !["emby", "jellyfin", "plex"].includes(body.serverId)) {
     throw createError({ statusCode: 400, statusMessage: "Enter a name, server address, and valid administrator credentials" });
   }
   const slug = instanceSlug(name);
@@ -49,8 +51,8 @@ export default defineHandler(async (event) => {
 
   let stage = "validating the media server address";
   try {
-    const validatedServerUrl = await validatePublicServerUrl(body.serverUrl);
-    const serverUrl = normalizeMediaServerUrl(body.serverId, validatedServerUrl);
+    const validatedServerUrl = isPlex ? "" : await validatePublicServerUrl(body.serverUrl!);
+    const serverUrl = isPlex ? "" : normalizeMediaServerUrl(body.serverId, validatedServerUrl);
     stage = "authenticating the media server administrator";
     const authenticated = body.serverId === "plex" ? null : await authenticateAt(body.serverId, serverUrl, username, password);
     stage = "encrypting retained credentials";

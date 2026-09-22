@@ -28,7 +28,7 @@ if (childServerType && childServerUrl && ["emby", "jellyfin", "plex"].includes(c
   };
 }
 
-export const CONFIGURED_CHILD_SERVER = childServerType && childServerUrl ? childServerType : null;
+export const CONFIGURED_CHILD_SERVER = childServerType && ["emby", "jellyfin", "plex"].includes(childServerType) ? childServerType : null;
 
 function clientHeader(serverId: ServerId) {
   return `MediaBrowser Client="HarborGate", Device="Secure Control Panel", DeviceId="harborgate-${serverId}", Version="1.0.0"`;

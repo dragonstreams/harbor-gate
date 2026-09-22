@@ -193,7 +193,7 @@ export async function deployBunnyInstance(input: BunnyDeploymentInput) {
       { name: "HARBORGATE_DATA_DIR", value: "/data" },
       { name: "HARBORGATE_MODE", value: "child" },
       { name: "HARBORGATE_SERVER_TYPE", value: input.serverId },
-      { name: "HARBORGATE_SERVER_URL", value: input.serverUrl },
+      ...(input.serverId !== "plex" ? [{ name: "HARBORGATE_SERVER_URL", value: input.serverUrl }] : []),
       ...(input.serverId !== "plex" && input.serverToken ? [{ name: tokenVariable, value: input.serverToken }] : []),
     ],
     volumeMounts: [{ name: "data", mountPath: "/data" }],

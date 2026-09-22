@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { Dashboard } from "@/components/Dashboard";
 import { LoginScreen } from "@/components/LoginScreen";
-import { completePlexSignIn, createPlexPin, getDashboard, getRuntimeConfig, mutateUser, signIn, signOut, type DashboardData, type RuntimeConfig, type ServerId } from "@/lib/harborgate";
+import { completePlexSignIn, createPlexPin, getDashboard, getRuntimeConfig, mutateUser, signIn, signOut, type DashboardData, type PlexAuthorization, type RuntimeConfig, type ServerId } from "@/lib/harborgate";
 
 const Index = () => {
   const [data, setData] = useState<DashboardData | null>(null);
@@ -26,10 +26,10 @@ const Index = () => {
     await refresh();
   }
 
-  async function plexLogin(serverUrl: string) {
+  async function plexLogin(): Promise<PlexAuthorization> {
     const popup = window.open("about:blank", "harborgate-plex-auth", "popup,width=720,height=760");
     try {
-      const pin = await createPlexPin(serverUrl);
+      const pin = await createPlexPin();
       if (popup) popup.location.href = pin.authUrl;
       else window.open(pin.authUrl, "_blank", "noopener,noreferrer");
       for (let attempt = 0; attempt < 150; attempt += 1) {
@@ -37,8 +37,7 @@ const Index = () => {
         const result = await completePlexSignIn(pin.pinId, pin.state);
         if (!result.pending) {
           popup?.close();
-          await refresh();
-          return;
+          return { pinId: pin.pinId, state: pin.state, servers: result.servers };
         }
       }
       throw new Error("Plex authorization timed out. Please try again.");
@@ -46,6 +45,11 @@ const Index = () => {
       popup?.close();
       throw error;
     }
+  }
+
+  async function selectPlexServer(authorization: PlexAuthorization, machineIdentifier: string) {
+    await completePlexSignIn(authorization.pinId, authorization.state, machineIdentifier);
+    await refresh();
   }
 
   async function logout() {
@@ -57,7 +61,7 @@ const Index = () => {
     return <div className="flex min-h-screen items-center justify-center bg-[#0b2135] text-white"><div className="text-center"><img src="/assets/harborgate-logo.png" alt="HarborGate" className="mx-auto mb-5 h-16 w-16 rounded-2xl" /><Loader2 className="mx-auto h-5 w-5 animate-spin text-[#55d7c6]" /><p className="mt-3 text-sm text-slate-400">Securing your harbor…</p></div></div>;
   }
 
-  if (!data) return <LoginScreen runtime={runtime} onLogin={login} onPlexLogin={plexLogin} />;
+  if (!data) return <LoginScreen runtime={runtime} onLogin={login} onPlexLogin={plexLogin} onPlexServerSelect={selectPlexServer} />;
 
   return <Dashboard data={data} onRefresh={refresh} onMutate={async (body) => { await mutateUser(data.csrf, body); }} onLogout={logout} />;
 };

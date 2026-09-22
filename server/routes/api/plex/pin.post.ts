@@ -1,19 +1,13 @@
 import { defineHandler } from "nitro";
-import { createError, readBody } from "nitro/h3";
-import { validatePublicServerUrl } from "../../../lib/instance-security";
+import { createError } from "nitro/h3";
 import { createPlexPin } from "../../../lib/plex";
 
-export default defineHandler(async (event) => {
-  const body = await readBody<{ serverUrl?: string }>(event);
-  if (!body?.serverUrl?.trim()) {
-    throw createError({ statusCode: 400, statusMessage: "Enter the Plex server address" });
-  }
+export default defineHandler(async () => {
   try {
-    const serverUrl = await validatePublicServerUrl(body.serverUrl);
-    return await createPlexPin(serverUrl);
+    return await createPlexPin();
   } catch (error) {
     throw createError({
-      statusCode: 400,
+      statusCode: 502,
       statusMessage: error instanceof Error ? error.message : "Unable to start Plex authorization",
     });
   }
