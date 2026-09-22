@@ -50,10 +50,17 @@ function headers(token?: string): Record<string, string> {
 async function plexResponse<T>(response: Response): Promise<T> {
   if (!response.ok) {
     const detail = (await response.text()).replace(/[\u0000-\u001f\u007f]+/g, " ").slice(0, 180);
-    throw new Error(detail || `Plex request failed (${response.status})`);
+    const message = detail.trim().toLowerCase() === "true" ? `Plex rejected the request (${response.status})` : detail;
+    throw new Error(message || `Plex request failed (${response.status})`);
   }
   if (response.status === 204 || response.headers.get("content-length") === "0") return undefined as T;
   return response.json() as Promise<T>;
+}
+
+function authenticatedPlexTvUrl(path: string, token: string) {
+  const url = new URL(path, PLEX_TV);
+  url.searchParams.set("X-Plex-Token", token);
+  return url.toString();
 }
 
 export async function createPlexPin() {
@@ -185,7 +192,8 @@ function sectionIds(value: Record<string, unknown>) {
 }
 
 export async function listPlexShares(token: string, machineIdentifier: string): Promise<PlexShare[]> {
-  const data = await plexResponse<Record<string, unknown>>(await fetch(`${PLEX_TV}/api/servers/${encodeURIComponent(machineIdentifier)}/shared_servers`, {
+  const path = `/api/servers/${encodeURIComponent(machineIdentifier)}/shared_servers`;
+  const data = await plexResponse<Record<string, unknown>>(await fetch(authenticatedPlexTvUrl(path, token), {
     signal: AbortSignal.timeout(15_000),
     headers: headers(token),
   }));
@@ -218,7 +226,8 @@ export async function listPlexLibraryIds(token: string, serverUrl: string) {
 }
 
 export async function revokePlexShare(token: string, machineIdentifier: string, shareId: string) {
-  await plexResponse<void>(await fetch(`${PLEX_TV}/api/servers/${encodeURIComponent(machineIdentifier)}/shared_servers/${encodeURIComponent(shareId)}`, {
+  const path = `/api/servers/${encodeURIComponent(machineIdentifier)}/shared_servers/${encodeURIComponent(shareId)}`;
+  await plexResponse<void>(await fetch(authenticatedPlexTvUrl(path, token), {
     method: "DELETE",
     signal: AbortSignal.timeout(15_000),
     headers: headers(token),
@@ -227,7 +236,8 @@ export async function revokePlexShare(token: string, machineIdentifier: string, 
 
 export async function restorePlexShare(token: string, machineIdentifier: string, invitedId: string, librarySectionIds: number[]) {
   if (!librarySectionIds.length) throw new Error("The previous Plex library permissions could not be restored safely");
-  return plexResponse<Record<string, unknown>>(await fetch(`${PLEX_TV}/api/servers/${encodeURIComponent(machineIdentifier)}/shared_servers`, {
+  const path = `/api/servers/${encodeURIComponent(machineIdentifier)}/shared_servers`;
+  return plexResponse<Record<string, unknown>>(await fetch(authenticatedPlexTvUrl(path, token), {
     method: "POST",
     signal: AbortSignal.timeout(15_000),
     headers: { ...headers(token), "Content-Type": "application/json" },
