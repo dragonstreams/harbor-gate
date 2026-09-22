@@ -6,6 +6,7 @@ export type EmbyPolicy = {
   EnableAllDevices?: boolean;
   EnableAllChannels?: boolean;
   EnableAllFolders?: boolean;
+  EnabledFolders?: string[];
   EnableContentDeletion?: boolean;
   EnableContentDownloading?: boolean;
   EnableSyncTranscoding?: boolean;

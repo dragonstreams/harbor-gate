@@ -97,6 +97,13 @@ export function authenticate(serverId: ServerId, username: string, password: str
 export const listUsers = (serverId: ServerId, token: string, serverUrl?: string) =>
   mediaFetch<EmbyUser[]>(serverId, token, "/Users", undefined, serverUrl);
 
+export async function listLibraries(serverId: ServerId, token: string, serverUrl?: string) {
+  const folders = await mediaFetch<{ ItemId?: string; Id?: string; Name?: string; CollectionType?: string }[]>(serverId, token, "/Library/VirtualFolders", undefined, serverUrl);
+  return folders
+    .filter((folder) => Boolean((folder.ItemId || folder.Id) && folder.Name))
+    .map((folder) => ({ id: folder.ItemId || folder.Id!, name: folder.Name!, type: folder.CollectionType ?? "mixed" }));
+}
+
 export const listFeatures = (serverId: ServerId, token: string, serverUrl?: string) =>
   mediaFetch<{ Id: string; Name: string; FeatureType?: string }[]>(serverId, token, "/Features", undefined, serverUrl);
 

@@ -6,6 +6,7 @@ export type UserPolicy = {
   EnableAllDevices?: boolean;
   EnableAllChannels?: boolean;
   EnableAllFolders?: boolean;
+  EnabledFolders?: string[];
   EnableContentDeletion?: boolean;
   EnableContentDownloading?: boolean;
   EnableSyncTranscoding?: boolean;
@@ -44,6 +45,12 @@ export type PlexLibrary = {
   type: string;
 };
 
+export type MediaLibrary = {
+  id: string;
+  name: string;
+  type: string;
+};
+
 export type DashboardData = {
   adminName: string;
   csrf: string;
@@ -54,6 +61,7 @@ export type DashboardData = {
   users: EmbyUser[];
   events: ExpirationEvent[];
   plexLibraries: PlexLibrary[];
+  mediaLibraries: MediaLibrary[];
 };
 
 export type RuntimeConfig = {

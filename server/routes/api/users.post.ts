@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { defineHandler } from "nitro";
 import { createError, readBody } from "nitro/h3";
-import { createUser, deleteUser, listFeatures, listUsers, setPolicy, setUserPassword, updateUser } from "../../lib/media-server";
+import { createUser, deleteUser, listFeatures, listLibraries, listUsers, setPolicy, setUserPassword, updateUser } from "../../lib/media-server";
 import { enforceExpirations } from "../../lib/expiration";
 import { invitePlexUser, listPlexLibraries, listPlexLibraryIds, listPlexShares, restorePlexShare, revokePlexShare } from "../../lib/plex";
 import { requireSession } from "../../lib/session";
@@ -27,6 +27,23 @@ function cleanExpiration(value: string | null | undefined) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) throw createError({ statusCode: 400, statusMessage: "Invalid expiration date" });
   return date.toISOString();
+}
+
+async function validateFolderPolicy(serverId: "emby" | "jellyfin", token: string, serverUrl: string, policy?: EmbyPolicy) {
+  if (policy?.EnableAllFolders !== false) return { EnableAllFolders: true, EnabledFolders: [] as string[] };
+  if (!Array.isArray(policy.EnabledFolders)) {
+    throw createError({ statusCode: 400, statusMessage: "Choose at least one library" });
+  }
+  const selected = [...new Set(policy.EnabledFolders)];
+  if (!selected.length || selected.some((id) => typeof id !== "string" || !id || id.length > 100)) {
+    throw createError({ statusCode: 400, statusMessage: "Choose at least one library" });
+  }
+  const available = await listLibraries(serverId, token, serverUrl);
+  const availableIds = new Set(available.map((library) => library.id));
+  if (selected.some((id) => !availableIds.has(id))) {
+    throw createError({ statusCode: 400, statusMessage: "One or more selected libraries are unavailable" });
+  }
+  return { EnableAllFolders: false, EnabledFolders: selected };
 }
 
 export default defineHandler(async (event) => {
@@ -178,6 +195,7 @@ export default defineHandler(async (event) => {
     const adminName = body.admin?.trim() ?? "";
     if (adminName.length > 100) throw createError({ statusCode: 400, statusMessage: "Admin name is too long" });
     const expiration = cleanExpiration(body.expiration);
+    const folderPolicy = await validateFolderPolicy(serverId, token, serverUrl, body.policy);
     let traktFeatureIds: string[] = [];
     if (serverId === "emby") {
       const features = await listFeatures(serverId, token, serverUrl);
@@ -201,6 +219,7 @@ export default defineHandler(async (event) => {
         EnablePublicSharing: false,
         EnableLiveTvAccess: false,
         EnableLiveTvManagement: false,
+        ...folderPolicy,
         ...(traktFeatureIds.length ? { RestrictedFeatures: [...new Set([...(created.Policy?.RestrictedFeatures ?? []), ...traktFeatureIds])] } : {}),
       }, serverUrl);
       if (expiration || adminName) {
@@ -242,9 +261,11 @@ export default defineHandler(async (event) => {
     const adminName = body.admin === undefined ? oldRecord?.adminName ?? "" : body.admin.trim();
     if (adminName.length > 100) throw createError({ statusCode: 400, statusMessage: "Admin name is too long" });
     const shouldReactivate = Boolean(oldRecord?.disabledByHarborGate && expiration && new Date(expiration).getTime() > Date.now());
+    const folderPolicy = await validateFolderPolicy(serverId, token, serverUrl, body.policy);
     const nextPolicy = {
       ...user.Policy,
       ...body.policy,
+      ...folderPolicy,
       IsAdministrator: false,
       ...(streamLimit === undefined ? {} : serverId === "emby" ? { SimultaneousStreamLimit: streamLimit } : { MaxActiveSessions: streamLimit }),
     };
