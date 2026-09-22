@@ -33,11 +33,36 @@ export default defineHandler(async (event) => {
   const name = body?.name?.trim();
 
   if (serverId === "plex") {
-    if (!session.machineIdentifier || body?.operation !== "update" || !body.id || typeof body.policy?.IsDisabled !== "boolean") {
-      throw createError({ statusCode: 400, statusMessage: "Plex shared users only support enabling or disabling access" });
+    if (!session.machineIdentifier || body?.operation !== "update" || !body.id) {
+      throw createError({ statusCode: 400, statusMessage: "Invalid Plex shared-user changes" });
     }
     const machineIdentifier = session.machineIdentifier;
     const key = `${machineIdentifier}:${body.id}`;
+
+    if (typeof body.policy?.IsDisabled !== "boolean") {
+      if (!Object.prototype.hasOwnProperty.call(body, "expiration")) {
+        throw createError({ statusCode: 400, statusMessage: "Enter a Plex expiration date" });
+      }
+      const expiration = cleanExpiration(body.expiration);
+      const stored = await readData();
+      const oldRecord = getExpiration(stored, serverId, body.id, machineIdentifier);
+      const shouldReactivate = Boolean(oldRecord?.disabledByHarborGate && (!expiration || new Date(expiration).getTime() > Date.now()));
+      if (shouldReactivate) {
+        const share = stored.plexShares[key];
+        if (!share) throw createError({ statusCode: 404, statusMessage: "The previous Plex library permissions were not found" });
+        await restorePlexShare(token, machineIdentifier, share.invitedId, share.librarySectionIds);
+      }
+      await updateData((data) => {
+        data.expirations[expirationKey(serverId, body.id!, machineIdentifier)] = { expiresAt: expiration, disabledByHarborGate: false };
+        if (shouldReactivate) {
+          data.plexShares[key] = { ...data.plexShares[key], enabled: true };
+          data.events.unshift({ id: randomUUID(), serverId, serverScope: machineIdentifier, userId: body.id!, userName: name || stored.plexShares[key]?.name || "Plex user", occurredAt: new Date().toISOString(), action: "reactivated" });
+        }
+      });
+      await enforceExpirations(serverId, token, serverUrl, machineIdentifier);
+      return { ok: true };
+    }
+
     const activeShares = await listPlexShares(token, machineIdentifier);
     const activeShare = activeShares.find((share) => share.invitedId === body.id);
     if (body.policy.IsDisabled) {

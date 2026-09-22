@@ -11,6 +11,7 @@ export default defineHandler(async (event) => {
   let data;
   if (session.serverId === "plex") {
     if (!session.machineIdentifier) throw new Error("Plex server identity is missing from this session");
+    await enforceExpirations(session.serverId, session.token, session.serverUrl, session.machineIdentifier);
     const activeShares = await listPlexShares(session.token, session.machineIdentifier);
     data = await updateData((current) => {
       for (const share of activeShares) {
@@ -43,9 +44,11 @@ export default defineHandler(async (event) => {
     serverHostname: new URL(session.serverUrl).host,
     isMaster: process.env.HARBORGATE_MODE !== "child",
     users: users.map((user) => {
-      const expiration = getExpiration(data, session.serverId, user.Id);
+      const expiration = getExpiration(data, session.serverId, user.Id, session.serverId === "plex" ? session.machineIdentifier : undefined);
       return { ...user, expiration: expiration?.expiresAt ?? null, admin: expiration?.adminName ?? "" };
     }),
-    events: data.events.filter((item) => (item.serverId ?? "emby") === session.serverId),
+    events: data.events.filter((item) =>
+      (item.serverId ?? "emby") === session.serverId &&
+      (session.serverId !== "plex" || item.serverScope === session.machineIdentifier)),
   };
 });

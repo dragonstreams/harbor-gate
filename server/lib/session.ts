@@ -50,12 +50,17 @@ export function removeSession(event: H3Event) {
 
 export function getActiveConnections() {
   const now = Date.now();
-  const connections = new Map<string, { serverId: ServerId; serverUrl: string; token: string }>();
+  const connections = new Map<string, { serverId: ServerId; serverUrl: string; token: string; machineIdentifier?: string }>();
   for (const [id, session] of sessions) {
     if (session.expiresAt < now) sessions.delete(id);
-    else if (session.serverId !== "plex") {
-      const key = `${session.serverId}:${session.serverUrl}`;
-      if (!connections.has(key)) connections.set(key, { serverId: session.serverId, serverUrl: session.serverUrl, token: session.token });
+    else {
+      const key = `${session.serverId}:${session.machineIdentifier ?? session.serverUrl}`;
+      if (!connections.has(key)) connections.set(key, {
+        serverId: session.serverId,
+        serverUrl: session.serverUrl,
+        token: session.token,
+        machineIdentifier: session.machineIdentifier,
+      });
     }
   }
   return [...connections.values()];

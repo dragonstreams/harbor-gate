@@ -10,9 +10,9 @@ export default definePlugin((nitroApp) => {
     const jellyfinKey = process.env.HARBORGATE_JELLYFIN_API_KEY?.trim();
     if (embyKey) connections.push({ serverId: "emby", serverUrl: MEDIA_SERVERS.emby.url, token: embyKey });
     if (jellyfinKey) connections.push({ serverId: "jellyfin", serverUrl: MEDIA_SERVERS.jellyfin.url, token: jellyfinKey });
-    await Promise.all(connections.map(async ({ serverId, serverUrl, token }) => {
+    await Promise.all(connections.map(async ({ serverId, serverUrl, token, machineIdentifier }) => {
       try {
-        await enforceExpirations(serverId, token, serverUrl);
+        await enforceExpirations(serverId, token, serverUrl, machineIdentifier);
       } catch {
         // Transient media-server failures are retried on the next interval.
       }

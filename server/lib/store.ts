@@ -7,10 +7,11 @@ const DATA_PATH = resolve(DATA_DIRECTORY, "data.json");
 const EMPTY_DATA: HarborData = { expirations: {}, events: [], instances: [], plexShares: {} };
 let writeQueue = Promise.resolve();
 
-export const expirationKey = (serverId: ServerId, userId: string) => `${serverId}:${userId}`;
+export const expirationKey = (serverId: ServerId, userId: string, serverScope?: string) =>
+  `${serverId}:${serverScope ? `${serverScope}:` : ""}${userId}`;
 
-export function getExpiration(data: HarborData, serverId: ServerId, userId: string) {
-  return data.expirations[expirationKey(serverId, userId)] ?? (serverId === "emby" ? data.expirations[userId] : undefined);
+export function getExpiration(data: HarborData, serverId: ServerId, userId: string, serverScope?: string) {
+  return data.expirations[expirationKey(serverId, userId, serverScope)] ?? (serverId === "emby" ? data.expirations[userId] : undefined);
 }
 
 export async function readData(): Promise<HarborData> {

@@ -37,6 +37,7 @@ export type ExpirationRecord = {
 export type ExpirationEvent = {
   id: string;
   serverId?: ServerId;
+  serverScope?: string;
   userId: string;
   userName: string;
   occurredAt: string;
