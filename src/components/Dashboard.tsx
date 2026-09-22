@@ -91,6 +91,21 @@ export function Dashboard({ data, onRefresh, onMutate, onLogout }: DashboardProp
     }
   }
 
+  async function saveNotes(user: EmbyUser, value: string) {
+    const notes = value.trim();
+    if (notes === user.notes) return;
+    setBusyId(user.Id);
+    try {
+      await onMutate({ operation: "notes", id: user.Id, notes });
+      await onRefresh();
+      toast.success(`Notes saved for ${user.Name}`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Unable to save notes");
+    } finally {
+      setBusyId("");
+    }
+  }
+
   async function saveAdmin(user: EmbyUser, value: string) {
     const admin = value.trim();
     if (admin === user.admin) return;
@@ -160,7 +175,7 @@ export function Dashboard({ data, onRefresh, onMutate, onLogout }: DashboardProp
             {filtered.length === 0 ? <div className="flex flex-col items-center px-6 py-14 text-center"><img src="/assets/harborgate-empty.png" alt="No matching users" className="mb-5 h-32 w-32 object-contain" /><h3 className="font-semibold">No {data.serverId === "plex" ? "shared users" : "profiles"} found</h3><p className="mt-1 max-w-sm text-sm text-slate-500">Try another search or filter{data.serverId === "plex" ? ". Add new shares from Plex." : `, or create a new ${data.serverLabel} profile.`}</p></div> : <div className="divide-y divide-slate-100">{filtered.map((user) => {
               const status = expirationState(user, data.serverId === "plex");
               return <article key={user.Id} className={`group grid gap-4 p-4 transition hover:bg-slate-50/70 sm:items-center sm:px-5 ${data.serverId === "plex" ? "sm:grid-cols-[minmax(220px,1.5fr)_minmax(100px,.7fr)_minmax(110px,.75fr)_130px]" : "sm:grid-cols-[minmax(220px,1.5fr)_minmax(100px,.65fr)_minmax(110px,.7fr)_minmax(110px,.75fr)_105px_38px]"}`}>
-                <div className="flex min-w-0 items-start gap-3"><div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[#e7f8f5] text-sm font-bold text-[#087d71]">{initials(user.Name)}</div><div className="min-w-0 flex-1"><button onClick={() => { setSelectedUser(user); setDialogOpen(true); }} className="block max-w-full text-left"><p className="truncate font-semibold">{user.Name}</p><p className="mt-0.5 flex items-center gap-1.5 text-xs text-slate-500">{data.serverId === "plex" ? <ShieldCheck className="h-3.5 w-3.5 text-amber-500" /> : user.HasPassword ? <ShieldCheck className="h-3.5 w-3.5 text-[#0F9F8F]" /> : <CircleUserRound className="h-3.5 w-3.5" />}{data.serverId === "plex" ? "Plex shared account" : user.HasPassword ? "Password protected" : "No password"}</p></button>{data.serverId !== "plex" && <div className="mt-2 flex items-center gap-2"><label htmlFor={`admin-${user.Id}`} className="shrink-0 text-xs font-semibold text-slate-500">Admin:</label><Input key={`${user.Id}-${user.admin}`} id={`admin-${user.Id}`} defaultValue={user.admin} maxLength={100} disabled={busyId === user.Id} onBlur={(event) => saveAdmin(user, event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }} placeholder="Owner name" className="h-7 min-w-0 rounded-lg border-slate-200 bg-white px-2.5 text-xs focus-visible:ring-[#0F9F8F]" /></div>}</div></div>
+                <div className="flex min-w-0 items-start gap-3"><div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[#e7f8f5] text-sm font-bold text-[#087d71]">{initials(user.Name)}</div><div className="min-w-0 flex-1"><button onClick={() => { setSelectedUser(user); setDialogOpen(true); }} className="block max-w-full text-left"><p className="truncate font-semibold">{user.Name}</p><p className="mt-0.5 flex items-center gap-1.5 text-xs text-slate-500">{data.serverId === "plex" ? <ShieldCheck className="h-3.5 w-3.5 text-amber-500" /> : user.HasPassword ? <ShieldCheck className="h-3.5 w-3.5 text-[#0F9F8F]" /> : <CircleUserRound className="h-3.5 w-3.5" />}{data.serverId === "plex" ? "Plex shared account" : user.HasPassword ? "Password protected" : "No password"}</p></button><div className="mt-2 flex items-center gap-2"><label htmlFor={`notes-${user.Id}`} className="shrink-0 text-xs font-semibold text-slate-500">Notes:</label><Input key={`${user.Id}-${user.notes}`} id={`notes-${user.Id}`} defaultValue={user.notes} maxLength={100} disabled={busyId === user.Id} onBlur={(event) => saveNotes(user, event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }} placeholder="Add a note" className="h-7 min-w-0 rounded-lg border-slate-200 bg-white px-2.5 text-xs focus-visible:ring-[#0F9F8F]" /></div>{data.serverId !== "plex" && <div className="mt-2 flex items-center gap-2"><label htmlFor={`admin-${user.Id}`} className="shrink-0 text-xs font-semibold text-slate-500">Admin:</label><Input key={`${user.Id}-${user.admin}`} id={`admin-${user.Id}`} defaultValue={user.admin} maxLength={100} disabled={busyId === user.Id} onBlur={(event) => saveAdmin(user, event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }} placeholder="Owner name" className="h-7 min-w-0 rounded-lg border-slate-200 bg-white px-2.5 text-xs focus-visible:ring-[#0F9F8F]" /></div>}</div></div>
                 <div><p className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400 sm:hidden">Status</p><Badge variant="outline" className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${status.tone}`}>{status.label}</Badge></div>
                 <div><p className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400 sm:hidden">Expires</p><p className="flex items-center gap-1.5 text-sm text-slate-600"><Clock3 className="h-3.5 w-3.5 text-slate-400" />{formatDate(user.expiration)}</p></div>
                 {data.serverId !== "plex" && <div><p className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400">Connections</p><p className="text-sm font-semibold text-[#24618b]">{connectionLimit(user, data.serverId)}</p></div>}

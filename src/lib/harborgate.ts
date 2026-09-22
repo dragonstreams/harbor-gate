@@ -27,6 +27,7 @@ export type EmbyUser = {
   Policy?: UserPolicy;
   expiration: string | null;
   admin: string;
+  notes: string;
 };
 
 export type ExpirationEvent = {

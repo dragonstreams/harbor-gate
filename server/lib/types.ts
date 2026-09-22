@@ -32,6 +32,7 @@ export type ExpirationRecord = {
   expiresAt: string | null;
   disabledByHarborGate: boolean;
   adminName?: string;
+  notes?: string;
 };
 
 export type ExpirationEvent = {

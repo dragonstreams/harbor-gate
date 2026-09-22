@@ -45,7 +45,7 @@ export default defineHandler(async (event) => {
     isMaster: process.env.HARBORGATE_MODE !== "child",
     users: users.map((user) => {
       const expiration = getExpiration(data, session.serverId, user.Id, session.serverId === "plex" ? session.machineIdentifier : undefined);
-      return { ...user, expiration: expiration?.expiresAt ?? null, admin: expiration?.adminName ?? "" };
+      return { ...user, expiration: expiration?.expiresAt ?? null, admin: expiration?.adminName ?? "", notes: expiration?.notes ?? "" };
     }),
     events: data.events.filter((item) =>
       (item.serverId ?? "emby") === session.serverId &&

@@ -9,12 +9,13 @@ import { expirationKey, getExpiration, readData, updateData } from "../../lib/st
 import type { EmbyPolicy } from "../../lib/types";
 
 type RequestBody = {
-  operation?: "create" | "update" | "delete";
+  operation?: "create" | "update" | "delete" | "notes";
   id?: string;
   name?: string;
   password?: string;
   maxSimultaneousStreams?: number;
   admin?: string;
+  notes?: string;
   expiration?: string | null;
   policy?: EmbyPolicy;
 };
@@ -31,6 +32,34 @@ export default defineHandler(async (event) => {
   const { serverId, serverUrl, token } = session;
   const body = await readBody<RequestBody>(event);
   const name = body?.name?.trim();
+
+  if (body?.operation === "notes") {
+    if (!body.id || body.id.length > 80 || typeof body.notes !== "string" || body.notes.length > 100) {
+      throw createError({ statusCode: 400, statusMessage: "Notes must be 100 characters or fewer" });
+    }
+    const scope = serverId === "plex" ? session.machineIdentifier : undefined;
+    if (serverId === "plex") {
+      if (!scope) throw createError({ statusCode: 400, statusMessage: "Plex server identity is missing" });
+      const active = await listPlexShares(token, scope);
+      const stored = await readData();
+      if (!active.some((share) => share.invitedId === body.id) && !stored.plexShares[`${scope}:${body.id}`]) {
+        throw createError({ statusCode: 404, statusMessage: "Plex shared user not found" });
+      }
+    } else {
+      const users = await listUsers(serverId, token, serverUrl);
+      if (!users.some((user) => user.Id === body.id)) throw createError({ statusCode: 404, statusMessage: "User profile not found" });
+    }
+    await updateData((data) => {
+      const previous = getExpiration(data, serverId, body.id!, scope);
+      data.expirations[expirationKey(serverId, body.id!, scope)] = {
+        expiresAt: previous?.expiresAt ?? null,
+        disabledByHarborGate: previous?.disabledByHarborGate ?? false,
+        adminName: previous?.adminName,
+        notes: body.notes!.trim(),
+      };
+    });
+    return { ok: true };
+  }
 
   if (serverId === "plex") {
     if (!session.machineIdentifier || body?.operation !== "update" || !body.id) {
@@ -53,7 +82,7 @@ export default defineHandler(async (event) => {
         await restorePlexShare(token, machineIdentifier, share.invitedId, share.librarySectionIds);
       }
       await updateData((data) => {
-        data.expirations[expirationKey(serverId, body.id!, machineIdentifier)] = { expiresAt: expiration, disabledByHarborGate: false };
+        data.expirations[expirationKey(serverId, body.id!, machineIdentifier)] = { ...oldRecord, expiresAt: expiration, disabledByHarborGate: false };
         if (shouldReactivate) {
           data.plexShares[key] = { ...data.plexShares[key], enabled: true };
           data.events.unshift({ id: randomUUID(), serverId, serverScope: machineIdentifier, userId: body.id!, userName: name || stored.plexShares[key]?.name || "Plex user", occurredAt: new Date().toISOString(), action: "reactivated" });
@@ -176,7 +205,7 @@ export default defineHandler(async (event) => {
     if (shouldReactivate) nextPolicy.IsDisabled = false;
     await updateUser(serverId, token, user, name, nextPolicy, serverUrl);
     await updateData((data) => {
-      data.expirations[expirationKey(serverId, user.Id)] = { expiresAt: expiration, disabledByHarborGate: false, adminName };
+      data.expirations[expirationKey(serverId, user.Id)] = { ...oldRecord, expiresAt: expiration, disabledByHarborGate: false, adminName };
       if (serverId === "emby") delete data.expirations[user.Id];
       if (shouldReactivate) {
         data.events.unshift({ id: randomUUID(), serverId, userId: user.Id, userName: name, occurredAt: new Date().toISOString(), action: "reactivated" });
