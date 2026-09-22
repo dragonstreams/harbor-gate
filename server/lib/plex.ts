@@ -63,6 +63,27 @@ function authenticatedPlexTvUrl(path: string, token: string) {
   return url.toString();
 }
 
+async function plexTextResponse(response: Response) {
+  const text = await response.text();
+  if (!response.ok || text.trim().toLowerCase() === "true") {
+    throw new Error(`Plex sharing request failed (${response.status})`);
+  }
+  return text;
+}
+
+function xmlAttributes(source: string) {
+  const attributes: Record<string, string> = {};
+  for (const match of source.matchAll(/([\w:-]+)="([^"]*)"/g)) {
+    attributes[match[1]] = match[2]
+      .replace(/&quot;/g, "\"")
+      .replace(/&apos;/g, "'")
+      .replace(/&lt;/g, "<")
+      .replace(/&gt;/g, ">")
+      .replace(/&amp;/g, "&");
+  }
+  return attributes;
+}
+
 export async function createPlexPin() {
   const pin = await plexResponse<PlexPin>(await fetch(`${PLEX_TV}/api/v2/pins?strong=true`, {
     method: "POST",
@@ -174,40 +195,35 @@ export async function selectPlexServer(pinId: number, state: string, machineIden
   throw new Error("The selected Plex server has no reachable public HTTPS connection");
 }
 
-function arrayValue(value: unknown) {
-  return Array.isArray(value) ? value : value ? [value] : [];
-}
-
-function sectionIds(value: Record<string, unknown>) {
-  const sections = arrayValue(value.Section ?? value.sections ?? value.librarySections);
-  return sections.map((section) => {
-    if (typeof section === "number") return section;
-    if (typeof section === "string") return Number(section);
-    if (section && typeof section === "object") {
-      const item = section as Record<string, unknown>;
-      return Number(item.id ?? item.key ?? item.sectionId);
-    }
-    return NaN;
-  }).filter(Number.isFinite);
-}
-
 export async function listPlexShares(token: string, machineIdentifier: string): Promise<PlexShare[]> {
-  const path = `/api/servers/${encodeURIComponent(machineIdentifier)}/shared_servers`;
-  const data = await plexResponse<Record<string, unknown>>(await fetch(authenticatedPlexTvUrl(path, token), {
+  const response = await fetch(authenticatedPlexTvUrl("/api/users/", token), {
     signal: AbortSignal.timeout(15_000),
-    headers: headers(token),
-  }));
-  const container = (data.MediaContainer ?? data) as Record<string, unknown>;
-  return arrayValue(container.SharedServer ?? container.sharedServers ?? container).map((raw) => {
-    const share = raw as Record<string, unknown>;
-    return {
-      id: String(share.id ?? share.shareId),
-      invitedId: String(share.userID ?? share.userId ?? share.invitedId),
-      name: String(share.username ?? share.title ?? share.email ?? "Plex user"),
-      email: String(share.email ?? ""),
-      librarySectionIds: sectionIds(share),
-    };
-  }).filter((share) => share.id !== "undefined" && share.invitedId !== "undefined");
+    headers: { ...headers(token), Accept: "application/xml" },
+  });
+  const text = await plexTextResponse(response);
+  const shares: PlexShare[] = [];
+  for (const userMatch of text.matchAll(/<User\b([^>]*)>([\s\S]*?)<\/User>/gi)) {
+    const user = xmlAttributes(userMatch[1]);
+    const invitedId = user.id;
+    if (!invitedId) continue;
+    for (const serverMatch of userMatch[2].matchAll(/<Server\b([^>]*?)(?:\/>|>([\s\S]*?)<\/Server>)/gi)) {
+      const server = xmlAttributes(serverMatch[1]);
+      if (server.machineIdentifier !== machineIdentifier || !server.id) continue;
+      const librarySectionIds = [...(serverMatch[2] ?? "").matchAll(/<Section\b([^>]*)\/?\s*>/gi)]
+        .map((section) => xmlAttributes(section[1]))
+        .filter((section) => section.shared !== "0")
+        .map((section) => Number(section.id ?? section.key))
+        .filter(Number.isFinite);
+      shares.push({
+        id: server.id,
+        invitedId,
+        name: user.username || user.title || user.email || "Plex user",
+        email: user.email || "",
+        librarySectionIds,
+      });
+    }
+  }
+  return shares;
 }
 
 export async function listPlexLibraryIds(token: string, serverUrl: string) {
@@ -227,17 +243,18 @@ export async function listPlexLibraryIds(token: string, serverUrl: string) {
 
 export async function revokePlexShare(token: string, machineIdentifier: string, shareId: string) {
   const path = `/api/servers/${encodeURIComponent(machineIdentifier)}/shared_servers/${encodeURIComponent(shareId)}`;
-  await plexResponse<void>(await fetch(authenticatedPlexTvUrl(path, token), {
+  const response = await fetch(authenticatedPlexTvUrl(path, token), {
     method: "DELETE",
     signal: AbortSignal.timeout(15_000),
     headers: headers(token),
-  }));
+  });
+  if (!response.ok) throw new Error(`Plex could not revoke the share (${response.status})`);
 }
 
 export async function restorePlexShare(token: string, machineIdentifier: string, invitedId: string, librarySectionIds: number[]) {
   if (!librarySectionIds.length) throw new Error("The previous Plex library permissions could not be restored safely");
   const path = `/api/servers/${encodeURIComponent(machineIdentifier)}/shared_servers`;
-  return plexResponse<Record<string, unknown>>(await fetch(authenticatedPlexTvUrl(path, token), {
+  const response = await fetch(authenticatedPlexTvUrl(path, token), {
     method: "POST",
     signal: AbortSignal.timeout(15_000),
     headers: { ...headers(token), "Content-Type": "application/json" },
@@ -245,7 +262,8 @@ export async function restorePlexShare(token: string, machineIdentifier: string,
       server_id: machineIdentifier,
       shared_server: { invited_id: Number(invitedId), library_section_ids: librarySectionIds },
     }),
-  }));
+  });
+  if (!response.ok) throw new Error(`Plex could not restore the share (${response.status})`);
 }
 
 export function plexShareUser(share: PlexShare, disabled = false): EmbyUser {
