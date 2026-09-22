@@ -1,7 +1,7 @@
 import { defineHandler } from "nitro";
 import { createError, readBody } from "nitro/h3";
 import { validatePublicServerUrl } from "../../lib/instance-security";
-import { authenticateAt, CONFIGURED_CHILD_SERVER, MEDIA_SERVERS, normalizeMediaServerUrl } from "../../lib/media-server";
+import { authenticateAt, MEDIA_SERVERS, normalizeMediaServerUrl } from "../../lib/media-server";
 import { createSession } from "../../lib/session";
 import type { ServerId } from "../../lib/types";
 
@@ -13,9 +13,6 @@ export default defineHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: serverId === "plex" ? "Use Sign in with Plex to continue" : "Enter valid administrator credentials and choose a server" });
   }
   const isChild = process.env.HARBORGATE_MODE === "child";
-  if (CONFIGURED_CHILD_SERVER && serverId !== CONFIGURED_CHILD_SERVER) {
-    throw createError({ statusCode: 400, statusMessage: "This HarborGate instance is not configured for that server type" });
-  }
   if (isChild && !body.serverUrl?.trim()) {
     throw createError({ statusCode: 400, statusMessage: "Enter the media server address" });
   }

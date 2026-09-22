@@ -15,7 +15,7 @@ const configuredChildServerUrl = process.env.HARBORGATE_SERVER_URL?.trim();
 const childServerUrl = childServerType && configuredChildServerUrl ? normalizeMediaServerUrl(childServerType, configuredChildServerUrl) : undefined;
 
 export const MEDIA_SERVERS: Record<ServerId, { label: string; url: string; hostname: string }> = {
-  emby: { label: "Emby", url: "https://33923.brr.savethecdn.com", hostname: "33923.brr.savethecdn.com" },
+  emby: { label: "Emby", url: normalizeMediaServerUrl("emby", "https://33923.brr.savethecdn.com"), hostname: "33923.brr.savethecdn.com" },
   jellyfin: { label: "Jellyfin", url: "https://36213.brr.savethecdn.com", hostname: "36213.brr.savethecdn.com" },
   plex: { label: "Plex", url: childServerUrl || "https://app.plex.tv", hostname: childServerUrl ? new URL(childServerUrl).host : "app.plex.tv" },
 };
@@ -47,7 +47,11 @@ function authenticationHeaders(serverId: ServerId, token?: string): Record<strin
 async function parseResponse<T>(serverId: ServerId, response: Response): Promise<T> {
   if (!response.ok) {
     const detail = await response.text();
-    const safeDetail = response.status === 401 ? "Invalid administrator credentials" : detail.slice(0, 180);
+    const safeDetail = response.status === 401
+      ? "Invalid administrator credentials"
+      : detail.trim().toLowerCase() === "true"
+        ? `${MEDIA_SERVERS[serverId].label} returned an invalid proxy response. Verify the server address and API path.`
+        : detail.slice(0, 180);
     throw new Error(safeDetail || `${MEDIA_SERVERS[serverId].label} request failed (${response.status})`);
   }
   if (response.status === 204 || response.headers.get("content-length") === "0") return undefined as T;
