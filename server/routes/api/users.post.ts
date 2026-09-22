@@ -3,19 +3,21 @@ import { defineHandler } from "nitro";
 import { createError, readBody } from "nitro/h3";
 import { createUser, deleteUser, listFeatures, listUsers, setPolicy, setUserPassword, updateUser } from "../../lib/media-server";
 import { enforceExpirations } from "../../lib/expiration";
-import { listPlexLibraryIds, listPlexShares, restorePlexShare, revokePlexShare } from "../../lib/plex";
+import { invitePlexUser, listPlexLibraries, listPlexLibraryIds, listPlexShares, restorePlexShare, revokePlexShare } from "../../lib/plex";
 import { requireSession } from "../../lib/session";
 import { expirationKey, getExpiration, readData, updateData } from "../../lib/store";
 import type { EmbyPolicy } from "../../lib/types";
 
 type RequestBody = {
-  operation?: "create" | "update" | "delete" | "notes";
+  operation?: "create" | "update" | "delete" | "notes" | "invite";
   id?: string;
   name?: string;
+  username?: string;
   password?: string;
   maxSimultaneousStreams?: number;
   admin?: string;
   notes?: string;
+  librarySectionIds?: number[];
   expiration?: string | null;
   policy?: EmbyPolicy;
 };
@@ -62,10 +64,54 @@ export default defineHandler(async (event) => {
   }
 
   if (serverId === "plex") {
-    if (!session.machineIdentifier || body?.operation !== "update" || !body.id) {
+    if (!session.machineIdentifier) throw createError({ statusCode: 400, statusMessage: "Plex server identity is missing" });
+    const machineIdentifier = session.machineIdentifier;
+
+    if (body?.operation === "invite") {
+      const username = body.username?.trim() ?? "";
+      const librarySectionIds = [...new Set(body.librarySectionIds ?? [])];
+      if (!/^[A-Za-z0-9._-]{1,100}$/.test(username)) {
+        throw createError({ statusCode: 400, statusMessage: "Enter a valid Plex username" });
+      }
+      if (!librarySectionIds.length || librarySectionIds.some((id) => !Number.isInteger(id) || id < 1)) {
+        throw createError({ statusCode: 400, statusMessage: "Choose at least one Plex library" });
+      }
+      const availableLibraries = await listPlexLibraries(token, serverUrl);
+      const availableIds = new Set(availableLibraries.map((library) => library.id));
+      if (librarySectionIds.some((id) => !availableIds.has(id))) {
+        throw createError({ statusCode: 400, statusMessage: "One or more selected Plex libraries are unavailable" });
+      }
+      const before = await listPlexShares(token, machineIdentifier);
+      if (before.some((share) => share.name.toLowerCase() === username.toLowerCase())) {
+        throw createError({ statusCode: 409, statusMessage: "That Plex username already has managed library access" });
+      }
+      const invitation = await invitePlexUser(token, machineIdentifier, username, librarySectionIds);
+      const previousIds = new Set(before.map((share) => share.id));
+      const invited = invitation ?? (await listPlexShares(token, machineIdentifier)).find((share) =>
+        !previousIds.has(share.id) || share.name.toLowerCase() === username.toLowerCase());
+      if (!invited) {
+        throw createError({ statusCode: 502, statusMessage: "Plex accepted the invitation, but the new managed user is not visible yet" });
+      }
+      const expiration = cleanExpiration(body.expiration);
+      await updateData((data) => {
+        data.plexShares[`${machineIdentifier}:${invited.invitedId}`] = {
+          machineIdentifier,
+          invitedId: invited.invitedId,
+          name: invited.name,
+          email: invited.email,
+          librarySectionIds,
+          enabled: true,
+        };
+        if (expiration) {
+          data.expirations[expirationKey(serverId, invited.invitedId, machineIdentifier)] = { expiresAt: expiration, disabledByHarborGate: false };
+        }
+      });
+      return { ok: true };
+    }
+
+    if (body?.operation !== "update" || !body.id) {
       throw createError({ statusCode: 400, statusMessage: "Invalid Plex shared-user changes" });
     }
-    const machineIdentifier = session.machineIdentifier;
     const key = `${machineIdentifier}:${body.id}`;
 
     if (typeof body.policy?.IsDisabled !== "boolean") {

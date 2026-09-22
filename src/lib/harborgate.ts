@@ -38,6 +38,12 @@ export type ExpirationEvent = {
   action: "expired" | "reactivated";
 };
 
+export type PlexLibrary = {
+  id: number;
+  title: string;
+  type: string;
+};
+
 export type DashboardData = {
   adminName: string;
   csrf: string;
@@ -47,6 +53,7 @@ export type DashboardData = {
   isMaster: boolean;
   users: EmbyUser[];
   events: ExpirationEvent[];
+  plexLibraries: PlexLibrary[];
 };
 
 export type RuntimeConfig = {

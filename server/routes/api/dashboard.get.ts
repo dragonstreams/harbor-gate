@@ -1,7 +1,7 @@
 import { defineHandler } from "nitro";
 import { enforceExpirations } from "../../lib/expiration";
 import { listUsers, MEDIA_SERVERS } from "../../lib/media-server";
-import { listPlexShares, plexShareUser } from "../../lib/plex";
+import { listPlexLibraries, listPlexShares, plexShareUser, type PlexLibrary } from "../../lib/plex";
 import { requireSession } from "../../lib/session";
 import { getExpiration, readData, updateData } from "../../lib/store";
 
@@ -9,10 +9,15 @@ export default defineHandler(async (event) => {
   const session = requireSession(event);
   let users;
   let data;
+  let plexLibraries: PlexLibrary[] = [];
   if (session.serverId === "plex") {
     if (!session.machineIdentifier) throw new Error("Plex server identity is missing from this session");
     await enforceExpirations(session.serverId, session.token, session.serverUrl, session.machineIdentifier);
-    const activeShares = await listPlexShares(session.token, session.machineIdentifier);
+    const [activeShares, libraries] = await Promise.all([
+      listPlexShares(session.token, session.machineIdentifier),
+      listPlexLibraries(session.token, session.serverUrl),
+    ]);
+    plexLibraries = libraries;
     data = await updateData((current) => {
       for (const share of activeShares) {
         current.plexShares[`${session.machineIdentifier}:${share.invitedId}`] = {
@@ -50,5 +55,6 @@ export default defineHandler(async (event) => {
     events: data.events.filter((item) =>
       (item.serverId ?? "emby") === session.serverId &&
       (session.serverId !== "plex" || item.serverScope === session.machineIdentifier)),
+    plexLibraries,
   };
 });

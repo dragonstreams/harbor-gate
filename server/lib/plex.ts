@@ -226,7 +226,9 @@ export async function listPlexShares(token: string, machineIdentifier: string): 
   return shares;
 }
 
-export async function listPlexLibraryIds(token: string, serverUrl: string) {
+export type PlexLibrary = { id: number; title: string; type: string };
+
+export async function listPlexLibraries(token: string, serverUrl: string): Promise<PlexLibrary[]> {
   const response = await fetch(`${serverUrl}/library/sections`, {
     signal: AbortSignal.timeout(15_000),
     headers: headers(token),
@@ -234,11 +236,50 @@ export async function listPlexLibraryIds(token: string, serverUrl: string) {
   if (!response.ok) throw new Error(`Unable to read Plex libraries (${response.status})`);
   const text = await response.text();
   try {
-    const data = JSON.parse(text) as { MediaContainer?: { Directory?: Array<{ key?: string | number }> } };
-    return (data.MediaContainer?.Directory ?? []).map((section) => Number(section.key)).filter(Number.isFinite);
+    const data = JSON.parse(text) as { MediaContainer?: { Directory?: Array<{ id?: string | number; key?: string | number; title?: string; type?: string }> } };
+    return (data.MediaContainer?.Directory ?? []).map((section) => ({
+      id: Number(section.id ?? section.key),
+      title: section.title || "Untitled library",
+      type: section.type || "library",
+    })).filter((section) => Number.isFinite(section.id));
   } catch {
-    return [...text.matchAll(/<Directory\b[^>]*\bkey=["'](\d+)["']/gi)].map((match) => Number(match[1]));
+    return [...text.matchAll(/<Directory\b([^>]*)\/?\s*>/gi)].map((match) => {
+      const section = xmlAttributes(match[1]);
+      return { id: Number(section.id ?? section.key), title: section.title || "Untitled library", type: section.type || "library" };
+    }).filter((section) => Number.isFinite(section.id));
   }
+}
+
+export async function listPlexLibraryIds(token: string, serverUrl: string) {
+  return (await listPlexLibraries(token, serverUrl)).map((section) => section.id);
+}
+
+export async function invitePlexUser(token: string, machineIdentifier: string, username: string, librarySectionIds: number[]) {
+  const path = `/api/servers/${encodeURIComponent(machineIdentifier)}/shared_servers`;
+  const response = await fetch(authenticatedPlexTvUrl(path, token), {
+    method: "POST",
+    signal: AbortSignal.timeout(15_000),
+    headers: { ...headers(token), "Content-Type": "application/json", Accept: "application/xml" },
+    body: JSON.stringify({
+      server_id: machineIdentifier,
+      shared_server: { invited_email: username, library_section_ids: librarySectionIds },
+      sharing_settings: { allowSync: "0", allowCameraUpload: "0", allowChannels: "0" },
+    }),
+  });
+  const text = await response.text();
+  if (!response.ok) throw new Error(`Plex could not invite that username (${response.status})`);
+  const match = text.match(/<SharedServer\b([^>]*)/i);
+  if (!match) return null;
+  const share = xmlAttributes(match[1]);
+  const invitedId = share.userID ?? share.userId ?? share.invitedId;
+  if (!share.id || !invitedId) return null;
+  return {
+    id: share.id,
+    invitedId,
+    name: share.username || share.title || username,
+    email: share.email || "",
+    librarySectionIds,
+  } satisfies PlexShare;
 }
 
 export async function revokePlexShare(token: string, machineIdentifier: string, shareId: string) {
