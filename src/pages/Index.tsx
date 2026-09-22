@@ -21,8 +21,8 @@ const Index = () => {
     ]).finally(() => setLoading(false));
   }, []);
 
-  async function login(serverId: ServerId, username: string, password: string) {
-    await signIn(serverId, username, password);
+  async function login(serverId: ServerId, serverUrl: string, username: string, password: string) {
+    await signIn(serverId, serverUrl, username, password);
     await refresh();
   }
 

@@ -53,6 +53,7 @@ export type RuntimeConfig = {
   serverId: ServerId | null;
   serverLabel: string | null;
   serverHostname: string | null;
+  serverUrl: string | null;
 };
 
 export type ManagedInstance = {
@@ -95,10 +96,10 @@ export const deployInstance = (csrf: string, body: { name: string; serverId: Ser
     body: JSON.stringify(body),
   });
 
-export const signIn = (serverId: ServerId, username: string, password: string) => request<{ adminName: string; csrf: string; serverId: ServerId }>("/api/session", {
+export const signIn = (serverId: ServerId, serverUrl: string, username: string, password: string) => request<{ adminName: string; csrf: string; serverId: ServerId }>("/api/session", {
   method: "POST",
   headers: { "Content-Type": "application/json" },
-  body: JSON.stringify({ serverId, username, password }),
+  body: JSON.stringify({ serverId, serverUrl, username, password }),
 });
 
 export const mutateUser = (csrf: string, body: object) => request<{ ok: boolean }>("/api/users", {

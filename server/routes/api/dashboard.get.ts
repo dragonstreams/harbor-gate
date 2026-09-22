@@ -6,15 +6,15 @@ import { getExpiration, readData } from "../../lib/store";
 
 export default defineHandler(async (event) => {
   const session = requireSession(event);
-  await enforceExpirations(session.serverId, session.token);
-  const [users, data] = await Promise.all([listUsers(session.serverId, session.token), readData()]);
+  await enforceExpirations(session.serverId, session.token, session.serverUrl);
+  const [users, data] = await Promise.all([listUsers(session.serverId, session.token, session.serverUrl), readData()]);
   const server = MEDIA_SERVERS[session.serverId];
   return {
     adminName: session.adminName,
     csrf: session.csrf,
     serverId: session.serverId,
     serverLabel: server.label,
-    serverHostname: server.hostname,
+    serverHostname: new URL(session.serverUrl).host,
     isMaster: process.env.HARBORGATE_MODE !== "child",
     users: users.map((user) => {
       const expiration = getExpiration(data, session.serverId, user.Id);

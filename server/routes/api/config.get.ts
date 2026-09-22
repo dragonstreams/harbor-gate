@@ -6,4 +6,5 @@ export default defineHandler(() => ({
   serverId: CONFIGURED_CHILD_SERVER,
   serverLabel: CONFIGURED_CHILD_SERVER ? MEDIA_SERVERS[CONFIGURED_CHILD_SERVER].label : null,
   serverHostname: CONFIGURED_CHILD_SERVER ? MEDIA_SERVERS[CONFIGURED_CHILD_SERVER].hostname : null,
+  serverUrl: CONFIGURED_CHILD_SERVER ? MEDIA_SERVERS[CONFIGURED_CHILD_SERVER].url : null,
 }));

@@ -27,7 +27,7 @@ function cleanExpiration(value: string | null | undefined) {
 
 export default defineHandler(async (event) => {
   const session = requireSession(event, true);
-  const { serverId, token } = session;
+  const { serverId, serverUrl, token } = session;
   const body = await readBody<RequestBody>(event);
   const name = body?.name?.trim();
 
@@ -44,7 +44,7 @@ export default defineHandler(async (event) => {
     const expiration = cleanExpiration(body.expiration);
     let traktFeatureIds: string[] = [];
     if (serverId === "emby") {
-      const features = await listFeatures(serverId, token);
+      const features = await listFeatures(serverId, token, serverUrl);
       traktFeatureIds = features
         .filter((feature) => `${feature.Name} ${feature.Id}`.toLowerCase().includes("trakt"))
         .map((feature) => feature.Id);
@@ -52,9 +52,9 @@ export default defineHandler(async (event) => {
         throw createError({ statusCode: 502, statusMessage: "The Emby server did not expose its Trakt feature ID" });
       }
     }
-    const created = await createUser(serverId, token, name, password);
+    const created = await createUser(serverId, token, name, password, serverUrl);
     try {
-      if (serverId === "emby") await setUserPassword(serverId, token, created.Id, password);
+      if (serverId === "emby") await setUserPassword(serverId, token, created.Id, password, serverUrl);
       await setPolicy(serverId, token, created.Id, {
         ...created.Policy,
         IsAdministrator: false,
@@ -66,28 +66,28 @@ export default defineHandler(async (event) => {
         EnableLiveTvAccess: false,
         EnableLiveTvManagement: false,
         ...(traktFeatureIds.length ? { RestrictedFeatures: [...new Set([...(created.Policy?.RestrictedFeatures ?? []), ...traktFeatureIds])] } : {}),
-      });
+      }, serverUrl);
       if (expiration || adminName) {
         await updateData((data) => {
           data.expirations[expirationKey(serverId, created.Id)] = { expiresAt: expiration, disabledByHarborGate: false, adminName };
         });
       }
-      await enforceExpirations(serverId, token);
+      await enforceExpirations(serverId, token, serverUrl);
       return { ok: true };
     } catch (error) {
-      await deleteUser(serverId, token, created.Id).catch(() => undefined);
+      await deleteUser(serverId, token, created.Id, serverUrl).catch(() => undefined);
       throw error;
     }
   }
 
   if (!body?.id || body.id.length > 80) throw createError({ statusCode: 400, statusMessage: "Invalid user profile" });
-  const users = await listUsers(serverId, token);
+  const users = await listUsers(serverId, token, serverUrl);
   const user = users.find((candidate) => candidate.Id === body.id);
   if (!user) throw createError({ statusCode: 404, statusMessage: "User profile not found" });
   if (user.Policy?.IsAdministrator) throw createError({ statusCode: 403, statusMessage: "Administrator profiles cannot be changed here" });
 
   if (body.operation === "delete") {
-    await deleteUser(serverId, token, user.Id);
+    await deleteUser(serverId, token, user.Id, serverUrl);
     await updateData((data) => {
       delete data.expirations[expirationKey(serverId, user.Id)];
       if (serverId === "emby") delete data.expirations[user.Id];
@@ -104,7 +104,7 @@ export default defineHandler(async (event) => {
     const shouldReactivate = Boolean(oldRecord?.disabledByHarborGate && expiration && new Date(expiration).getTime() > Date.now());
     const nextPolicy = { ...user.Policy, ...body.policy, IsAdministrator: false };
     if (shouldReactivate) nextPolicy.IsDisabled = false;
-    await updateUser(serverId, token, user, name, nextPolicy);
+    await updateUser(serverId, token, user, name, nextPolicy, serverUrl);
     await updateData((data) => {
       data.expirations[expirationKey(serverId, user.Id)] = { expiresAt: expiration, disabledByHarborGate: false, adminName };
       if (serverId === "emby") delete data.expirations[user.Id];
@@ -112,7 +112,7 @@ export default defineHandler(async (event) => {
         data.events.unshift({ id: randomUUID(), serverId, userId: user.Id, userName: name, occurredAt: new Date().toISOString(), action: "reactivated" });
       }
     });
-    await enforceExpirations(serverId, token);
+    await enforceExpirations(serverId, token, serverUrl);
     return { ok: true };
   }
 

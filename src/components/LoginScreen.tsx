@@ -7,11 +7,12 @@ import type { RuntimeConfig, ServerId } from "@/lib/harborgate";
 
 interface LoginScreenProps {
   runtime: RuntimeConfig | null;
-  onLogin: (serverId: ServerId, username: string, password: string) => Promise<void>;
+  onLogin: (serverId: ServerId, serverUrl: string, username: string, password: string) => Promise<void>;
 }
 
 export function LoginScreen({ runtime, onLogin }: LoginScreenProps) {
   const [serverId, setServerId] = useState<ServerId>(runtime?.serverId ?? "emby");
+  const [serverUrl, setServerUrl] = useState(runtime?.serverUrl ?? "");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -23,7 +24,7 @@ export function LoginScreen({ runtime, onLogin }: LoginScreenProps) {
     setBusy(true);
     setError("");
     try {
-      await onLogin(serverId, username, password);
+      await onLogin(serverId, serverUrl, username, password);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Unable to sign in");
     } finally {
@@ -63,7 +64,8 @@ export function LoginScreen({ runtime, onLogin }: LoginScreenProps) {
             <p className="mt-2 text-sm leading-6 text-slate-500">{runtime?.mode === "child" ? `Sign in to manage ${runtime.serverHostname ?? "this media server"}.` : "Choose a server and sign in with its administrator account."}</p>
             <form onSubmit={submit} className="mt-8 space-y-5">
               {runtime?.mode !== "child" && <fieldset className="space-y-2"><legend className="text-sm font-medium">Media server</legend><div className="grid grid-cols-2 gap-2 rounded-2xl bg-slate-100 p-1.5">{(["emby", "jellyfin"] as ServerId[]).map((id) => <button key={id} type="button" onClick={() => { setServerId(id); setError(""); }} className={`rounded-xl px-3 py-2.5 text-sm font-semibold transition ${serverId === id ? "bg-white text-[#087d71] shadow-sm" : "text-slate-500 hover:text-slate-800"}`}><span className={`mr-2 inline-block h-2 w-2 rounded-full ${id === "emby" ? "bg-emerald-500" : "bg-violet-500"}`} />{id === "emby" ? "Emby" : "Jellyfin"}</button>)}</div></fieldset>}
-              <div className="space-y-2"><Label htmlFor="username">{serverId === "emby" ? "Emby" : "Jellyfin"} username</Label><Input id="username" value={username} onChange={(event) => setUsername(event.target.value)} autoComplete="username" required className="h-12 rounded-xl border-slate-200 bg-slate-50 px-4 focus-visible:ring-[#0F9F8F]" placeholder="Administrator" /></div>
+              {runtime?.mode === "child" && <div className="space-y-2"><Label htmlFor="serverUrl">Server address</Label><Input id="serverUrl" value={serverUrl} onChange={(event) => setServerUrl(event.target.value)} type="url" inputMode="url" autoComplete="url" required className="h-12 rounded-xl border-slate-200 bg-slate-50 px-4 focus-visible:ring-[#0F9F8F]" placeholder="https://emby.example.com" /></div>}
+              <div className="space-y-2"><Label htmlFor="username">Admin username</Label><Input id="username" value={username} onChange={(event) => setUsername(event.target.value)} autoComplete="username" required className="h-12 rounded-xl border-slate-200 bg-slate-50 px-4 focus-visible:ring-[#0F9F8F]" placeholder="Administrator" /></div>
               <div className="space-y-2"><Label htmlFor="password">Password</Label><div className="relative"><Input id="password" value={password} onChange={(event) => setPassword(event.target.value)} type={showPassword ? "text" : "password"} autoComplete="current-password" required className="h-12 rounded-xl border-slate-200 bg-slate-50 px-4 pr-12 focus-visible:ring-[#0F9F8F]" /><button type="button" onClick={() => setShowPassword((value) => !value)} className="absolute right-3 top-1/2 -translate-y-1/2 rounded-lg p-1.5 text-slate-400 hover:bg-slate-200 hover:text-slate-700" aria-label={showPassword ? "Hide password" : "Show password"}>{showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}</button></div></div>
               {error && <p role="alert" className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>}
               <Button disabled={busy} className="h-12 w-full rounded-xl bg-[#0F9F8F] font-semibold text-white shadow-lg shadow-teal-700/15 hover:bg-[#0b887b]">{busy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}{busy ? "Connecting…" : "Sign in securely"}<ArrowRight className="ml-2 h-4 w-4" /></Button>

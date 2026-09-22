@@ -53,8 +53,8 @@ async function parseResponse<T>(serverId: ServerId, response: Response): Promise
   return response.json() as Promise<T>;
 }
 
-async function mediaFetch<T>(serverId: ServerId, token: string, path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${MEDIA_SERVERS[serverId].url}${path}`, {
+async function mediaFetch<T>(serverId: ServerId, token: string, path: string, init?: RequestInit, serverUrl = MEDIA_SERVERS[serverId].url): Promise<T> {
+  const response = await fetch(`${serverUrl}${path}`, {
     ...init,
     redirect: "error",
     signal: AbortSignal.timeout(15_000),
@@ -89,45 +89,46 @@ export function authenticate(serverId: ServerId, username: string, password: str
   return authenticateAt(serverId, MEDIA_SERVERS[serverId].url, username, password);
 }
 
-export const listUsers = (serverId: ServerId, token: string) => mediaFetch<EmbyUser[]>(serverId, token, "/Users");
+export const listUsers = (serverId: ServerId, token: string, serverUrl?: string) =>
+  mediaFetch<EmbyUser[]>(serverId, token, "/Users", undefined, serverUrl);
 
-export const listFeatures = (serverId: ServerId, token: string) =>
-  mediaFetch<{ Id: string; Name: string; FeatureType?: string }[]>(serverId, token, "/Features");
+export const listFeatures = (serverId: ServerId, token: string, serverUrl?: string) =>
+  mediaFetch<{ Id: string; Name: string; FeatureType?: string }[]>(serverId, token, "/Features", undefined, serverUrl);
 
-export async function createUser(serverId: ServerId, token: string, name: string, password: string) {
+export async function createUser(serverId: ServerId, token: string, name: string, password: string, serverUrl?: string) {
   if (serverId === "jellyfin") {
     return mediaFetch<EmbyUser>(serverId, token, "/Users/New", {
       method: "POST",
       body: JSON.stringify({ Name: name, Password: password }),
-    });
+    }, serverUrl);
   }
-  return mediaFetch<EmbyUser>(serverId, token, `/Users/New?Name=${encodeURIComponent(name)}`, { method: "POST" });
+  return mediaFetch<EmbyUser>(serverId, token, `/Users/New?Name=${encodeURIComponent(name)}`, { method: "POST" }, serverUrl);
 }
 
-export async function setUserPassword(serverId: ServerId, token: string, userId: string, password: string) {
+export async function setUserPassword(serverId: ServerId, token: string, userId: string, password: string, serverUrl?: string) {
   return mediaFetch<void>(serverId, token, `/Users/${encodeURIComponent(userId)}/Password`, {
     method: "POST",
     body: JSON.stringify(serverId === "jellyfin"
       ? { CurrentPw: "", NewPw: password }
       : { NewPw: password, ResetPassword: false }),
-  });
+  }, serverUrl);
 }
 
-export async function updateUser(serverId: ServerId, token: string, user: EmbyUser, name: string, policy: EmbyPolicy) {
+export async function updateUser(serverId: ServerId, token: string, user: EmbyUser, name: string, policy: EmbyPolicy, serverUrl?: string) {
   if (name !== user.Name) {
     await mediaFetch<void>(serverId, token, `/Users/${encodeURIComponent(user.Id)}`, {
       method: "POST",
       body: JSON.stringify({ ...user, Name: name }),
-    });
+    }, serverUrl);
   }
-  await setPolicy(serverId, token, user.Id, policy);
+  await setPolicy(serverId, token, user.Id, policy, serverUrl);
 }
 
-export const setPolicy = (serverId: ServerId, token: string, userId: string, policy: EmbyPolicy) =>
+export const setPolicy = (serverId: ServerId, token: string, userId: string, policy: EmbyPolicy, serverUrl?: string) =>
   mediaFetch<void>(serverId, token, `/Users/${encodeURIComponent(userId)}/Policy`, {
     method: "POST",
     body: JSON.stringify(policy),
-  });
+  }, serverUrl);
 
-export const deleteUser = (serverId: ServerId, token: string, userId: string) =>
-  mediaFetch<void>(serverId, token, `/Users/${encodeURIComponent(userId)}`, { method: "DELETE" });
+export const deleteUser = (serverId: ServerId, token: string, userId: string, serverUrl?: string) =>
+  mediaFetch<void>(serverId, token, `/Users/${encodeURIComponent(userId)}`, { method: "DELETE" }, serverUrl);
