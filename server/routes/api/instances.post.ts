@@ -3,7 +3,7 @@ import { defineHandler } from "nitro";
 import { createError, readBody, setResponseStatus } from "nitro/h3";
 import { deployBunnyInstance, getBunnyConfigurationStatus } from "../../lib/bunny";
 import { encryptCredentials, validatePublicServerUrl } from "../../lib/instance-security";
-import { authenticateAt } from "../../lib/media-server";
+import { authenticateAt, normalizeMediaServerUrl } from "../../lib/media-server";
 import { requireSession } from "../../lib/session";
 import { readData, updateData } from "../../lib/store";
 import type { ServerId } from "../../lib/types";
@@ -48,7 +48,8 @@ export default defineHandler(async (event) => {
 
   let stage = "validating the media server address";
   try {
-    const serverUrl = await validatePublicServerUrl(body.serverUrl);
+    const validatedServerUrl = await validatePublicServerUrl(body.serverUrl);
+    const serverUrl = normalizeMediaServerUrl(body.serverId, validatedServerUrl);
     stage = "authenticating the media server administrator";
     const authenticated = await authenticateAt(body.serverId, serverUrl, username, body.password);
     stage = "encrypting retained credentials";

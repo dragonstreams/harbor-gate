@@ -1,7 +1,18 @@
 import type { EmbyPolicy, EmbyUser, ServerId } from "./types";
 
+export function normalizeMediaServerUrl(serverId: ServerId, value: string) {
+  const trimmed = value.trim().replace(/\/+$/, "");
+  if (serverId !== "emby") return trimmed;
+  const url = new URL(trimmed);
+  if (!url.pathname.toLowerCase().endsWith("/emby")) {
+    url.pathname = `${url.pathname.replace(/\/+$/, "")}/emby`;
+  }
+  return `${url.origin}${url.pathname.replace(/\/+$/, "")}`;
+}
+
 const childServerType = process.env.HARBORGATE_MODE === "child" ? process.env.HARBORGATE_SERVER_TYPE as ServerId | undefined : undefined;
-const childServerUrl = process.env.HARBORGATE_SERVER_URL?.trim().replace(/\/+$/, "");
+const configuredChildServerUrl = process.env.HARBORGATE_SERVER_URL?.trim();
+const childServerUrl = childServerType && configuredChildServerUrl ? normalizeMediaServerUrl(childServerType, configuredChildServerUrl) : undefined;
 
 export const MEDIA_SERVERS: Record<ServerId, { label: string; url: string; hostname: string }> = {
   emby: { label: "Emby", url: "https://33923.brr.savethecdn.com", hostname: "33923.brr.savethecdn.com" },
@@ -64,9 +75,14 @@ export async function authenticateAt(serverId: ServerId, serverUrl: string, user
     headers: { "Content-Type": "application/json", ...authenticationHeaders(serverId) },
     body: JSON.stringify({ Username: username, Pw: password }),
   });
-  const result = await parseResponse<{ AccessToken: string; User: EmbyUser }>(serverId, response);
-  if (!result.User.Policy?.IsAdministrator) throw new Error(`This ${MEDIA_SERVERS[serverId].label} account is not an administrator`);
-  return result;
+  const result = await parseResponse<unknown>(serverId, response);
+  if (!result || typeof result !== "object" || !("AccessToken" in result) || typeof result.AccessToken !== "string" ||
+      !("User" in result) || !result.User || typeof result.User !== "object") {
+    throw new Error(`${MEDIA_SERVERS[serverId].label} returned an unexpected authentication response. Verify that the server address points directly to the media server.`);
+  }
+  const authenticated = result as { AccessToken: string; User: EmbyUser };
+  if (!authenticated.User.Policy?.IsAdministrator) throw new Error(`This ${MEDIA_SERVERS[serverId].label} account is not an administrator`);
+  return authenticated;
 }
 
 export function authenticate(serverId: ServerId, username: string, password: string) {
