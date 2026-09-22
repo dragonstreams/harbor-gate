@@ -43,10 +43,11 @@ export function UserDialog({ open, user, serverId, onOpenChange, onSave }: UserD
   useEffect(() => {
     setName(user?.Name ?? "");
     setPassword("");
-    setMaxStreams("1");
+    const currentLimit = serverId === "emby" ? user?.Policy?.SimultaneousStreamLimit : user?.Policy?.MaxActiveSessions;
+    setMaxStreams(String(currentLimit && currentLimit >= 1 ? currentLimit : 1));
     setExpiration(toDateValue(user?.expiration ?? null));
     setPolicy(user?.Policy ?? { EnableAllDevices: true, EnableAllFolders: true, EnableAllChannels: true, IsDisabled: false });
-  }, [user, open]);
+  }, [user, open, serverId]);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -57,7 +58,7 @@ export function UserDialog({ open, user, serverId, onOpenChange, onSave }: UserD
         id: user?.Id,
         name,
         password: user ? undefined : password,
-        maxSimultaneousStreams: user ? undefined : Number(maxStreams),
+        maxSimultaneousStreams: Number(maxStreams),
         expiration: expiration ? new Date(`${expiration}T23:59:59`).toISOString() : null,
         policy: user ? policy : undefined,
       });
@@ -81,7 +82,7 @@ export function UserDialog({ open, user, serverId, onOpenChange, onSave }: UserD
               <div className="space-y-2"><Label htmlFor="profile-name">{user ? "Profile name" : "Username"}</Label><Input id="profile-name" value={name} onChange={(event) => setName(event.target.value)} required maxLength={100} autoComplete={user ? "off" : "username"} className="h-11 rounded-xl focus-visible:ring-[#0F9F8F]" placeholder={user ? "e.g. Alex" : "Choose a username"} /></div>
               {!user && <div className="space-y-2"><Label htmlFor="profile-password">Password</Label><div className="relative"><KeyRound className="absolute left-3 top-3.5 h-4 w-4 text-slate-400" /><Input id="profile-password" type="password" value={password} onChange={(event) => setPassword(event.target.value)} required minLength={4} maxLength={200} autoComplete="new-password" className="h-11 rounded-xl pl-10 focus-visible:ring-[#0F9F8F]" placeholder="At least 4 characters" /></div></div>}
               <div className="space-y-2"><Label htmlFor="expiration">Expiration date</Label><div className="relative"><CalendarDays className="absolute left-3 top-3.5 h-4 w-4 text-slate-400" /><Input id="expiration" type="date" value={expiration} onChange={(event) => setExpiration(event.target.value)} min={new Date().toISOString().slice(0, 10)} className="h-11 rounded-xl pl-10 focus-visible:ring-[#0F9F8F]" /></div></div>
-              {!user && <div className="space-y-2"><Label htmlFor="max-streams">{serverId === "emby" ? "Max simultaneous streams" : "Max active sessions"}</Label><div className="relative"><Radio className="absolute left-3 top-3.5 h-4 w-4 text-slate-400" /><Input id="max-streams" type="number" value={maxStreams} onChange={(event) => setMaxStreams(event.target.value)} required min={1} max={100} className="h-11 rounded-xl pl-10 focus-visible:ring-[#0F9F8F]" /></div></div>}
+              <div className="space-y-2"><Label htmlFor="max-streams">{serverId === "emby" ? "Max simultaneous streams" : "Max active sessions"}</Label><div className="relative"><Radio className="absolute left-3 top-3.5 h-4 w-4 text-slate-400" /><Input id="max-streams" type="number" value={maxStreams} onChange={(event) => setMaxStreams(event.target.value)} required min={1} max={100} className="h-11 rounded-xl pl-10 focus-visible:ring-[#0F9F8F]" /></div></div>
             </div>
             {!user && <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-4"><div className="mb-3 flex items-center gap-2"><ShieldCheck className="h-4 w-4 text-[#0F9F8F]" /><p className="text-sm font-semibold text-[#102a43]">Secure access defaults</p></div><div className="grid gap-2 text-xs text-slate-600 sm:grid-cols-2"><div className="flex items-center gap-2 rounded-xl bg-white px-3 py-2.5"><Download className="h-3.5 w-3.5 text-rose-500" /><span>Media downloads disabled</span></div><div className="flex items-center gap-2 rounded-xl bg-white px-3 py-2.5"><Radio className="h-3.5 w-3.5 text-rose-500" /><span>Transcoded downloads disabled</span></div><div className="flex items-center gap-2 rounded-xl bg-white px-3 py-2.5"><Share2 className="h-3.5 w-3.5 text-rose-500" /><span>Social sharing disabled</span></div><div className="flex items-center gap-2 rounded-xl bg-white px-3 py-2.5"><Tv className="h-3.5 w-3.5 text-rose-500" /><span>Live TV disabled</span></div><div className="flex items-center gap-2 rounded-xl bg-white px-3 py-2.5"><Tv className="h-3.5 w-3.5 text-rose-500" /><span>Live TV recording management disabled</span></div>{serverId === "emby" && <div className="flex items-center gap-2 rounded-xl bg-white px-3 py-2.5"><Link2Off className="h-3.5 w-3.5 text-rose-500" /><span>Trakt feature restricted</span></div>}</div></div>}
             <p className="rounded-xl bg-[#effaf8] px-4 py-3 text-xs leading-5 text-[#116b63]">Profiles expire at 11:59 PM on the selected date. Extending an automatically disabled profile re-enables it.</p>

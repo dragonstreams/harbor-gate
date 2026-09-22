@@ -133,12 +133,21 @@ export default defineHandler(async (event) => {
 
   if (body.operation === "update") {
     if (!name || name.length > 100 || !body.policy) throw createError({ statusCode: 400, statusMessage: "Invalid profile changes" });
+    const streamLimit = body.maxSimultaneousStreams;
+    if (streamLimit !== undefined && (!Number.isInteger(streamLimit) || streamLimit < 1 || streamLimit > 100)) {
+      throw createError({ statusCode: 400, statusMessage: "Maximum simultaneous connections must be between 1 and 100" });
+    }
     const expiration = cleanExpiration(body.expiration);
     const oldRecord = getExpiration(await readData(), serverId, user.Id);
     const adminName = body.admin === undefined ? oldRecord?.adminName ?? "" : body.admin.trim();
     if (adminName.length > 100) throw createError({ statusCode: 400, statusMessage: "Admin name is too long" });
     const shouldReactivate = Boolean(oldRecord?.disabledByHarborGate && expiration && new Date(expiration).getTime() > Date.now());
-    const nextPolicy = { ...user.Policy, ...body.policy, IsAdministrator: false };
+    const nextPolicy = {
+      ...user.Policy,
+      ...body.policy,
+      IsAdministrator: false,
+      ...(streamLimit === undefined ? {} : serverId === "emby" ? { SimultaneousStreamLimit: streamLimit } : { MaxActiveSessions: streamLimit }),
+    };
     if (shouldReactivate) nextPolicy.IsDisabled = false;
     await updateUser(serverId, token, user, name, nextPolicy, serverUrl);
     await updateData((data) => {
