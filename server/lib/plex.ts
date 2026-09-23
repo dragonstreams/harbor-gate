@@ -248,15 +248,17 @@ export async function listPlexLibraryIds(token: string, machineIdentifier: strin
   return (await listPlexLibraries(token, machineIdentifier)).map((section) => section.id);
 }
 
-async function resolvePlexUserId(token: string, username: string) {
+export type PlexUserOption = { id: number; username: string; title: string };
+
+export async function searchPlexUsers(token: string, query: string): Promise<PlexUserOption[]> {
   const url = new URL("/api/v2/users", PLEX_TV);
-  url.searchParams.set("query", username);
+  url.searchParams.set("query", query);
   url.searchParams.set("X-Plex-Token", token);
   const response = await fetch(url, {
     signal: AbortSignal.timeout(15_000),
     headers: headers(token),
   });
-  if (!response.ok) throw new Error(`Plex could not look up that username (${response.status})`);
+  if (!response.ok) throw new Error(`Plex user search failed (${response.status})`);
   const data = await response.json() as unknown;
   const container = data && typeof data === "object" && !Array.isArray(data) ? data as Record<string, unknown> : {};
   const mediaContainer = container.MediaContainer && typeof container.MediaContainer === "object"
@@ -271,20 +273,17 @@ async function resolvePlexUserId(token: string, username: string) {
         : Array.isArray(mediaContainer.User)
           ? mediaContainer.User
           : [];
-  const match = candidates.find((candidate) => {
-    if (!candidate || typeof candidate !== "object") return false;
+  return candidates.flatMap((candidate) => {
+    if (!candidate || typeof candidate !== "object") return [];
     const account = candidate as Record<string, unknown>;
-    return [account.username, account.title].some((value) => typeof value === "string" && value.toLowerCase() === username.toLowerCase());
-  }) as Record<string, unknown> | undefined;
-  const id = match?.id ?? match?.userId;
-  if ((typeof id !== "number" && typeof id !== "string") || !String(id).match(/^\d+$/)) {
-    throw new Error(`Plex username "${username}" was not found`);
-  }
-  return Number(id);
+    const id = account.id ?? account.userId;
+    const username = typeof account.username === "string" ? account.username : "";
+    if (!username || (typeof id !== "number" && typeof id !== "string") || !String(id).match(/^\d+$/)) return [];
+    return [{ id: Number(id), username, title: typeof account.title === "string" ? account.title : username }];
+  }).slice(0, 8);
 }
 
-export async function invitePlexUser(token: string, machineIdentifier: string, username: string, librarySectionIds: number[]) {
-  const resolvedUserId = await resolvePlexUserId(token, username);
+export async function invitePlexUser(token: string, machineIdentifier: string, invitedUser: PlexUserOption, librarySectionIds: number[]) {
   const response = await fetch(authenticatedPlexTvUrl("/api/v2/shared_servers", token), {
     method: "POST",
     signal: AbortSignal.timeout(15_000),
@@ -293,7 +292,7 @@ export async function invitePlexUser(token: string, machineIdentifier: string, u
       machineIdentifier,
       librarySectionIds,
       settings: { allowTuners: 0, allowSync: 0 },
-      invitedId: resolvedUserId,
+      invitedId: invitedUser.id,
     }),
   });
   const text = await response.text();
@@ -308,12 +307,12 @@ export async function invitePlexUser(token: string, machineIdentifier: string, u
       ? data.sharedServer as Record<string, unknown>
       : data;
     const id = share.id ?? share.shareId;
-    const invitedId = share.userID ?? share.userId ?? share.invitedId ?? resolvedUserId;
+    const invitedId = share.userID ?? share.userId ?? share.invitedId ?? invitedUser.id;
     if (id === undefined) return null;
     return {
       id: String(id),
       invitedId: String(invitedId),
-      name: typeof share.username === "string" ? share.username : username,
+      name: typeof share.username === "string" ? share.username : invitedUser.username,
       email: typeof share.email === "string" ? share.email : "",
       librarySectionIds,
     } satisfies PlexShare;

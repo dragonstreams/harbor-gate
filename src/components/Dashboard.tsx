@@ -80,7 +80,7 @@ export function Dashboard({ data, onRefresh, onMutate, onLogout }: DashboardProp
     }
   }
 
-  async function invitePlexUser(payload: { operation: "invite"; username: string; librarySectionIds: number[]; expiration: string | null }) {
+  async function invitePlexUser(payload: { operation: "invite"; invitedId: number; username: string; librarySectionIds: number[]; expiration: string | null }) {
     try {
       await onMutate(payload);
       await onRefresh();

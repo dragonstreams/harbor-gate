@@ -3,7 +3,7 @@ import { defineHandler } from "nitro";
 import { createError, readBody } from "nitro/h3";
 import { createUser, deleteUser, getUser, listFeatures, listLibraries, listUsers, setPolicy, setUserPassword, updateUser } from "../../lib/media-server";
 import { enforceExpirations } from "../../lib/expiration";
-import { invitePlexUser, listPlexLibraries, listPlexLibraryIds, listPlexShares, restorePlexShare, revokePlexShare } from "../../lib/plex";
+import { invitePlexUser, listPlexLibraries, listPlexLibraryIds, listPlexShares, restorePlexShare, revokePlexShare, searchPlexUsers } from "../../lib/plex";
 import { requireSession } from "../../lib/session";
 import { expirationKey, getExpiration, readData, updateData } from "../../lib/store";
 import type { EmbyPolicy } from "../../lib/types";
@@ -18,6 +18,7 @@ type RequestBody = {
   admin?: string;
   notes?: string;
   librarySectionIds?: number[];
+  invitedId?: number;
   expiration?: string | null;
   policy?: EmbyPolicy;
 };
@@ -90,9 +91,14 @@ export default defineHandler(async (event) => {
       if (!/^[A-Za-z0-9._-]{1,100}$/.test(username)) {
         throw createError({ statusCode: 400, statusMessage: "Enter a valid Plex username" });
       }
+      if (!Number.isInteger(body.invitedId) || body.invitedId! < 1) {
+        throw createError({ statusCode: 400, statusMessage: "Select a Plex account from the search results" });
+      }
       if (!librarySectionIds.length || librarySectionIds.some((id) => !Number.isInteger(id) || id < 1)) {
         throw createError({ statusCode: 400, statusMessage: "Choose at least one Plex library" });
       }
+      const matchingUser = (await searchPlexUsers(token, username)).find((user) => user.id === body.invitedId && user.username.toLowerCase() === username.toLowerCase());
+      if (!matchingUser) throw createError({ statusCode: 400, statusMessage: "The selected Plex account is no longer available" });
       const availableLibraries = await listPlexLibraries(token, machineIdentifier);
       const availableIds = new Set(availableLibraries.map((library) => library.id));
       if (librarySectionIds.some((id) => !availableIds.has(id))) {
@@ -102,7 +108,7 @@ export default defineHandler(async (event) => {
       if (before.some((share) => share.name.toLowerCase() === username.toLowerCase())) {
         throw createError({ statusCode: 409, statusMessage: "That Plex username already has managed library access" });
       }
-      const invitation = await invitePlexUser(token, machineIdentifier, username, librarySectionIds);
+      const invitation = await invitePlexUser(token, machineIdentifier, matchingUser, librarySectionIds);
       const previousIds = new Set(before.map((share) => share.id));
       let invited = invitation;
       for (let attempt = 0; !invited && attempt < 4; attempt += 1) {

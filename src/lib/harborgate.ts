@@ -121,6 +121,10 @@ export const signIn = (serverId: ServerId, serverUrl: string, username: string, 
 
 export type PlexServerOption = { machineIdentifier: string; name: string };
 export type PlexAuthorization = { pinId: number; state: string; servers: PlexServerOption[] };
+export type PlexUserOption = { id: number; username: string; title: string };
+
+export const searchPlexUsers = (query: string, signal?: AbortSignal) =>
+  request<{ users: PlexUserOption[] }>(`/api/plex/users?q=${encodeURIComponent(query)}`, { signal });
 
 export const createPlexPin = () => request<{ pinId: number; state: string; authUrl: string }>("/api/plex/pin", {
   method: "POST",
