@@ -113,14 +113,13 @@ export const listFeatures = (serverId: ServerId, token: string, serverUrl?: stri
   mediaFetch<{ Id: string; Name: string; FeatureType?: string }[]>(serverId, token, "/Features", undefined, serverUrl);
 
 export async function createUser(serverId: ServerId, token: string, name: string, password: string, serverUrl?: string) {
-  const result = await mediaFetch<unknown>(serverId, token, "/Users/New", {
-    method: "POST",
-    body: JSON.stringify(serverId === "jellyfin" ? { Name: name, Password: password } : { Name: name }),
-  }, serverUrl);
-  if (!result || typeof result !== "object" || !("Id" in result) || typeof result.Id !== "string" || !result.Id) {
-    throw new Error(`${MEDIA_SERVERS[serverId].label} did not return the newly created user profile. Verify that the server address points directly to the media server API.`);
+  if (serverId === "jellyfin") {
+    return mediaFetch<EmbyUser>(serverId, token, "/Users/New", {
+      method: "POST",
+      body: JSON.stringify({ Name: name, Password: password }),
+    }, serverUrl);
   }
-  return result as EmbyUser;
+  return mediaFetch<EmbyUser>(serverId, token, `/Users/New?Name=${encodeURIComponent(name)}`, { method: "POST" }, serverUrl);
 }
 
 export async function setUserPassword(serverId: ServerId, token: string, userId: string, password: string, serverUrl?: string) {
@@ -128,7 +127,7 @@ export async function setUserPassword(serverId: ServerId, token: string, userId:
     method: "POST",
     body: JSON.stringify(serverId === "jellyfin"
       ? { CurrentPw: "", NewPw: password }
-      : { CurrentPw: "", NewPw: password, ResetPassword: false }),
+      : { NewPw: password, ResetPassword: false }),
   }, serverUrl);
 }
 
