@@ -107,10 +107,10 @@ export const getUser = (serverId: ServerId, token: string, userId: string, serve
 
 export async function listLibraries(serverId: ServerId, token: string, serverUrl?: string) {
   if (serverId === "emby") {
-    const folders = await mediaFetch<{ Id?: string; Name?: string; IsUserAccessConfigurable?: boolean }[]>(serverId, token, "/Library/SelectableMediaFolders", undefined, serverUrl);
+    const folders = await mediaFetch<{ Id?: string; Guid?: string; Name?: string; IsUserAccessConfigurable?: boolean }[]>(serverId, token, "/Library/SelectableMediaFolders", undefined, serverUrl);
     return folders
-      .filter((folder): folder is { Id: string; Name: string; IsUserAccessConfigurable?: boolean } => Boolean(folder.Id && folder.Name && folder.IsUserAccessConfigurable !== false))
-      .map((folder) => ({ id: folder.Id, name: folder.Name, type: "library" }));
+      .filter((folder) => Boolean((folder.Guid || folder.Id) && folder.Name && folder.IsUserAccessConfigurable !== false))
+      .map((folder) => ({ id: folder.Guid || folder.Id!, name: folder.Name!, type: "library" }));
   }
   const folders = await mediaFetch<{ ItemId?: string; Id?: string; Name?: string; CollectionType?: string }[]>(serverId, token, "/Library/VirtualFolders", undefined, serverUrl);
   return folders
