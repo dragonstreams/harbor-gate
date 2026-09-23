@@ -104,10 +104,14 @@ export default defineHandler(async (event) => {
       }
       const invitation = await invitePlexUser(token, machineIdentifier, username, librarySectionIds);
       const previousIds = new Set(before.map((share) => share.id));
-      const invited = invitation ?? (await listPlexShares(token, machineIdentifier)).find((share) =>
-        !previousIds.has(share.id) || share.name.toLowerCase() === username.toLowerCase());
+      let invited = invitation;
+      for (let attempt = 0; !invited && attempt < 4; attempt += 1) {
+        if (attempt) await new Promise((resolve) => setTimeout(resolve, 500));
+        invited = (await listPlexShares(token, machineIdentifier)).find((share) =>
+          !previousIds.has(share.id) || share.name.toLowerCase() === username.toLowerCase()) ?? null;
+      }
       if (!invited) {
-        throw createError({ statusCode: 502, statusMessage: "Plex accepted the invitation, but the new managed user is not visible yet" });
+        throw createError({ statusCode: 502, statusMessage: "Plex did not create the managed library invitation" });
       }
       const expiration = cleanExpiration(body.expiration);
       await updateData((data) => {

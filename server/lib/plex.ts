@@ -248,7 +248,38 @@ export async function listPlexLibraryIds(token: string, machineIdentifier: strin
   return (await listPlexLibraries(token, machineIdentifier)).map((section) => section.id);
 }
 
+async function resolvePlexUserId(token: string, username: string) {
+  const url = new URL("/api/v2/users", PLEX_TV);
+  url.searchParams.set("query", username);
+  url.searchParams.set("X-Plex-Token", token);
+  const response = await fetch(url, {
+    signal: AbortSignal.timeout(15_000),
+    headers: headers(token),
+  });
+  if (!response.ok) throw new Error(`Plex could not look up that username (${response.status})`);
+  const data = await response.json() as unknown;
+  const container = data && typeof data === "object" && !Array.isArray(data) ? data as Record<string, unknown> : {};
+  const candidates = Array.isArray(data)
+    ? data
+    : Array.isArray(container.users)
+      ? container.users
+      : Array.isArray(container.results)
+        ? container.results
+        : [];
+  const match = candidates.find((candidate) => {
+    if (!candidate || typeof candidate !== "object") return false;
+    const account = candidate as Record<string, unknown>;
+    return [account.username, account.title].some((value) => typeof value === "string" && value.toLowerCase() === username.toLowerCase());
+  }) as Record<string, unknown> | undefined;
+  const id = match?.id ?? match?.userId;
+  if ((typeof id !== "number" && typeof id !== "string") || !String(id).match(/^\d+$/)) {
+    throw new Error(`Plex username "${username}" was not found`);
+  }
+  return Number(id);
+}
+
 export async function invitePlexUser(token: string, machineIdentifier: string, username: string, librarySectionIds: number[]) {
+  const resolvedUserId = await resolvePlexUserId(token, username);
   const path = `/api/servers/${encodeURIComponent(machineIdentifier)}/shared_servers`;
   const response = await fetch(authenticatedPlexTvUrl(path, token), {
     method: "POST",
@@ -256,8 +287,15 @@ export async function invitePlexUser(token: string, machineIdentifier: string, u
     headers: { ...headers(token), "Content-Type": "application/json", Accept: "application/xml" },
     body: JSON.stringify({
       server_id: machineIdentifier,
-      shared_server: { invited_email: username, library_section_ids: librarySectionIds },
-      sharing_settings: { allowSync: "0", allowCameraUpload: "0", allowChannels: "0" },
+      shared_server: { invited_id: resolvedUserId, library_section_ids: librarySectionIds },
+      sharing_settings: {
+        allowSync: "0",
+        allowCameraUpload: "0",
+        allowChannels: "0",
+        filterMovies: "",
+        filterTelevision: "",
+        filterMusic: "",
+      },
     }),
   });
   const text = await response.text();
