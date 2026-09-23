@@ -259,13 +259,18 @@ async function resolvePlexUserId(token: string, username: string) {
   if (!response.ok) throw new Error(`Plex could not look up that username (${response.status})`);
   const data = await response.json() as unknown;
   const container = data && typeof data === "object" && !Array.isArray(data) ? data as Record<string, unknown> : {};
+  const mediaContainer = container.MediaContainer && typeof container.MediaContainer === "object"
+    ? container.MediaContainer as Record<string, unknown>
+    : {};
   const candidates = Array.isArray(data)
     ? data
     : Array.isArray(container.users)
       ? container.users
       : Array.isArray(container.results)
         ? container.results
-        : [];
+        : Array.isArray(mediaContainer.User)
+          ? mediaContainer.User
+          : [];
   const match = candidates.find((candidate) => {
     if (!candidate || typeof candidate !== "object") return false;
     const account = candidate as Record<string, unknown>;
@@ -280,38 +285,41 @@ async function resolvePlexUserId(token: string, username: string) {
 
 export async function invitePlexUser(token: string, machineIdentifier: string, username: string, librarySectionIds: number[]) {
   const resolvedUserId = await resolvePlexUserId(token, username);
-  const path = `/api/servers/${encodeURIComponent(machineIdentifier)}/shared_servers`;
-  const response = await fetch(authenticatedPlexTvUrl(path, token), {
+  const response = await fetch(authenticatedPlexTvUrl("/api/v2/shared_servers", token), {
     method: "POST",
     signal: AbortSignal.timeout(15_000),
-    headers: { ...headers(token), "Content-Type": "application/json", Accept: "application/xml" },
+    headers: { ...headers(token), "Content-Type": "application/json", Accept: "application/json" },
     body: JSON.stringify({
-      server_id: machineIdentifier,
-      shared_server: { invited_id: resolvedUserId, library_section_ids: librarySectionIds },
-      sharing_settings: {
-        allowSync: "0",
-        allowCameraUpload: "0",
-        allowChannels: "0",
-        filterMovies: "",
-        filterTelevision: "",
-        filterMusic: "",
-      },
+      machineIdentifier,
+      librarySectionIds,
+      settings: { allowTuners: 0, allowSync: 0 },
+      invitedId: resolvedUserId,
     }),
   });
   const text = await response.text();
-  if (!response.ok) throw new Error(`Plex could not invite that username (${response.status})`);
-  const match = text.match(/<SharedServer\b([^>]*)/i);
-  if (!match) return null;
-  const share = xmlAttributes(match[1]);
-  const invitedId = share.userID ?? share.userId ?? share.invitedId;
-  if (!share.id || !invitedId) return null;
-  return {
-    id: share.id,
-    invitedId,
-    name: share.username || share.title || username,
-    email: share.email || "",
-    librarySectionIds,
-  } satisfies PlexShare;
+  if (!response.ok) {
+    const detail = text.replace(/[\u0000-\u001f\u007f]+/g, " ").trim().slice(0, 180);
+    throw new Error(detail || `Plex could not grant library access (${response.status})`);
+  }
+  if (!text || text.trim().toLowerCase() === "true") return null;
+  try {
+    const data = JSON.parse(text) as Record<string, unknown>;
+    const share = data.sharedServer && typeof data.sharedServer === "object"
+      ? data.sharedServer as Record<string, unknown>
+      : data;
+    const id = share.id ?? share.shareId;
+    const invitedId = share.userID ?? share.userId ?? share.invitedId ?? resolvedUserId;
+    if (id === undefined) return null;
+    return {
+      id: String(id),
+      invitedId: String(invitedId),
+      name: typeof share.username === "string" ? share.username : username,
+      email: typeof share.email === "string" ? share.email : "",
+      librarySectionIds,
+    } satisfies PlexShare;
+  } catch {
+    return null;
+  }
 }
 
 export async function revokePlexShare(token: string, machineIdentifier: string, shareId: string) {
