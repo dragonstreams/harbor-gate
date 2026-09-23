@@ -102,6 +102,9 @@ export async function listUsers(serverId: ServerId, token: string, serverUrl?: s
   return mediaFetch<EmbyUser[]>(serverId, token, "/Users", undefined, serverUrl);
 }
 
+export const getUser = (serverId: ServerId, token: string, userId: string, serverUrl?: string) =>
+  mediaFetch<EmbyUser>(serverId, token, `/Users/${encodeURIComponent(userId)}`, undefined, serverUrl);
+
 export async function listLibraries(serverId: ServerId, token: string, serverUrl?: string) {
   if (serverId === "emby") {
     const folders = await mediaFetch<{ Id?: string; Name?: string; IsUserAccessConfigurable?: boolean }[]>(serverId, token, "/Library/SelectableMediaFolders", undefined, serverUrl);

@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { defineHandler } from "nitro";
 import { createError, readBody } from "nitro/h3";
-import { createUser, deleteUser, listFeatures, listLibraries, listUsers, setPolicy, setUserPassword, updateUser } from "../../lib/media-server";
+import { createUser, deleteUser, getUser, listFeatures, listLibraries, listUsers, setPolicy, setUserPassword, updateUser } from "../../lib/media-server";
 import { enforceExpirations } from "../../lib/expiration";
 import { invitePlexUser, listPlexLibraries, listPlexLibraryIds, listPlexShares, restorePlexShare, revokePlexShare } from "../../lib/plex";
 import { requireSession } from "../../lib/session";
@@ -30,7 +30,7 @@ function cleanExpiration(value: string | null | undefined) {
 }
 
 async function validateFolderPolicy(serverId: "emby" | "jellyfin", token: string, serverUrl: string, policy?: EmbyPolicy) {
-  if (policy?.EnableAllFolders !== false) return { EnableAllFolders: true, EnabledFolders: [] as string[] };
+  if (policy?.EnableAllFolders !== false) return { EnableAllFolders: true, EnabledFolders: [] as string[], ExcludedSubFolders: [] as string[] };
   if (!Array.isArray(policy.EnabledFolders)) {
     throw createError({ statusCode: 400, statusMessage: "Choose at least one library" });
   }
@@ -43,7 +43,7 @@ async function validateFolderPolicy(serverId: "emby" | "jellyfin", token: string
   if (selected.some((id) => !availableIds.has(id))) {
     throw createError({ statusCode: 400, statusMessage: "One or more selected libraries are unavailable" });
   }
-  return { EnableAllFolders: false, EnabledFolders: selected };
+  return { EnableAllFolders: false, EnabledFolders: selected, ExcludedSubFolders: [] as string[] };
 }
 
 export default defineHandler(async (event) => {
@@ -209,8 +209,9 @@ export default defineHandler(async (event) => {
     const created = await createUser(serverId, token, name, password, serverUrl);
     try {
       if (serverId === "emby") await setUserPassword(serverId, token, created.Id, password, serverUrl);
+      const currentUser = await getUser(serverId, token, created.Id, serverUrl);
       await setPolicy(serverId, token, created.Id, {
-        ...created.Policy,
+        ...currentUser.Policy,
         IsAdministrator: false,
         IsDisabled: false,
         ...(serverId === "emby" ? { SimultaneousStreamLimit: streamLimit } : { MaxActiveSessions: streamLimit }),
@@ -220,8 +221,15 @@ export default defineHandler(async (event) => {
         EnableLiveTvAccess: false,
         EnableLiveTvManagement: false,
         ...folderPolicy,
-        ...(traktFeatureIds.length ? { RestrictedFeatures: [...new Set([...(created.Policy?.RestrictedFeatures ?? []), ...traktFeatureIds])] } : {}),
+        ...(traktFeatureIds.length ? { RestrictedFeatures: [...new Set([...(currentUser.Policy?.RestrictedFeatures ?? []), ...traktFeatureIds])] } : {}),
       }, serverUrl);
+      if (!folderPolicy.EnableAllFolders) {
+        const savedUser = await getUser(serverId, token, created.Id, serverUrl);
+        const savedFolders = new Set(savedUser.Policy?.EnabledFolders ?? []);
+        if (savedUser.Policy?.EnableAllFolders !== false || folderPolicy.EnabledFolders.some((id) => !savedFolders.has(id))) {
+          throw createError({ statusCode: 502, statusMessage: `${serverId === "emby" ? "Emby" : "Jellyfin"} did not apply the selected library access` });
+        }
+      }
       if (expiration || adminName) {
         await updateData((data) => {
           data.expirations[expirationKey(serverId, created.Id)] = { expiresAt: expiration, disabledByHarborGate: false, adminName };

@@ -7,6 +7,7 @@ export type UserPolicy = {
   EnableAllChannels?: boolean;
   EnableAllFolders?: boolean;
   EnabledFolders?: string[];
+  ExcludedSubFolders?: string[];
   EnableContentDeletion?: boolean;
   EnableContentDownloading?: boolean;
   EnableSyncTranscoding?: boolean;
