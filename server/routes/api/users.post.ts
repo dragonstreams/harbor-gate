@@ -93,7 +93,7 @@ export default defineHandler(async (event) => {
       if (!librarySectionIds.length || librarySectionIds.some((id) => !Number.isInteger(id) || id < 1)) {
         throw createError({ statusCode: 400, statusMessage: "Choose at least one Plex library" });
       }
-      const availableLibraries = await listPlexLibraries(token, serverUrl);
+      const availableLibraries = await listPlexLibraries(token, machineIdentifier);
       const availableIds = new Set(availableLibraries.map((library) => library.id));
       if (librarySectionIds.some((id) => !availableIds.has(id))) {
         throw createError({ statusCode: 400, statusMessage: "One or more selected Plex libraries are unavailable" });
@@ -161,7 +161,7 @@ export default defineHandler(async (event) => {
       if (!activeShare) return { ok: true };
       const librarySectionIds = activeShare.librarySectionIds.length
         ? activeShare.librarySectionIds
-        : await listPlexLibraryIds(token, serverUrl);
+        : await listPlexLibraryIds(token, machineIdentifier);
       if (!librarySectionIds.length) throw createError({ statusCode: 502, statusMessage: "Plex did not return the libraries required to restore this share later" });
       await revokePlexShare(token, machineIdentifier, activeShare.id);
       await updateData((data) => {

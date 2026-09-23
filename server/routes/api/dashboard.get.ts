@@ -16,7 +16,7 @@ export default defineHandler(async (event) => {
     await enforceExpirations(session.serverId, session.token, session.serverUrl, session.machineIdentifier);
     const [activeShares, libraries] = await Promise.all([
       listPlexShares(session.token, session.machineIdentifier),
-      listPlexLibraries(session.token, session.serverUrl),
+      listPlexLibraries(session.token, session.machineIdentifier),
     ]);
     plexLibraries = libraries;
     data = await updateData((current) => {

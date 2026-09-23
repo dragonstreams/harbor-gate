@@ -19,7 +19,7 @@ export async function enforceExpirations(serverId: ServerId, token: string, serv
         if (!record?.expiresAt || new Date(record.expiresAt).getTime() > Date.now()) continue;
         const librarySectionIds = share.librarySectionIds.length
           ? share.librarySectionIds
-          : await listPlexLibraryIds(token, serverUrl);
+          : await listPlexLibraryIds(token, machineIdentifier);
         if (!librarySectionIds.length) continue;
         await revokePlexShare(token, machineIdentifier, share.id);
         await updateData((next) => {

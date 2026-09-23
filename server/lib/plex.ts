@@ -228,30 +228,24 @@ export async function listPlexShares(token: string, machineIdentifier: string): 
 
 export type PlexLibrary = { id: number; title: string; type: string };
 
-export async function listPlexLibraries(token: string, serverUrl: string): Promise<PlexLibrary[]> {
-  const response = await fetch(`${serverUrl}/library/sections`, {
+export async function listPlexLibraries(token: string, machineIdentifier: string): Promise<PlexLibrary[]> {
+  const response = await fetch(authenticatedPlexTvUrl(`/api/servers/${encodeURIComponent(machineIdentifier)}`, token), {
     signal: AbortSignal.timeout(15_000),
-    headers: headers(token),
+    headers: { ...headers(token), Accept: "application/xml" },
   });
-  if (!response.ok) throw new Error(`Unable to read Plex libraries (${response.status})`);
-  const text = await response.text();
-  try {
-    const data = JSON.parse(text) as { MediaContainer?: { Directory?: Array<{ id?: string | number; key?: string | number; title?: string; type?: string }> } };
-    return (data.MediaContainer?.Directory ?? []).map((section) => ({
-      id: Number(section.id ?? section.key),
+  const text = await plexTextResponse(response);
+  return [...text.matchAll(/<Section\b([^>]*)\/?\s*>/gi)].map((match) => {
+    const section = xmlAttributes(match[1]);
+    return {
+      id: Number(section.id),
       title: section.title || "Untitled library",
       type: section.type || "library",
-    })).filter((section) => Number.isFinite(section.id));
-  } catch {
-    return [...text.matchAll(/<Directory\b([^>]*)\/?\s*>/gi)].map((match) => {
-      const section = xmlAttributes(match[1]);
-      return { id: Number(section.id ?? section.key), title: section.title || "Untitled library", type: section.type || "library" };
-    }).filter((section) => Number.isFinite(section.id));
-  }
+    };
+  }).filter((section) => Number.isFinite(section.id));
 }
 
-export async function listPlexLibraryIds(token: string, serverUrl: string) {
-  return (await listPlexLibraries(token, serverUrl)).map((section) => section.id);
+export async function listPlexLibraryIds(token: string, machineIdentifier: string) {
+  return (await listPlexLibraries(token, machineIdentifier)).map((section) => section.id);
 }
 
 export async function invitePlexUser(token: string, machineIdentifier: string, username: string, librarySectionIds: number[]) {
