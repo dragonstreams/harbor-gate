@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Activity, Boxes, CalendarClock, ChevronDown, CircleUserRound, Clock3, History, LayoutDashboard, LogOut, Menu, MoreHorizontal, Plus, Search, Server, ShieldCheck, Trash2, UserRoundCheck, UsersRound, UserX, X } from "lucide-react";
+import { Activity, Boxes, CalendarClock, ChevronDown, CircleUserRound, Clock3, ExternalLink, History, LayoutDashboard, LogOut, Menu, MoreHorizontal, Plus, Search, Server, ShieldCheck, Trash2, UserRoundCheck, UsersRound, UserX, X } from "lucide-react";
 import { toast } from "sonner";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
@@ -13,7 +13,6 @@ import { Switch } from "@/components/ui/switch";
 import type { DashboardData, EmbyUser } from "@/lib/harborgate";
 import { InstanceManager } from "./InstanceManager";
 import { PlexExpirationDialog } from "./PlexExpirationDialog";
-import { PlexInviteDialog } from "./PlexInviteDialog";
 import { UserDialog } from "./UserDialog";
 
 interface DashboardProps {
@@ -52,7 +51,6 @@ export function Dashboard({ data, onRefresh, onMutate, onLogout }: DashboardProp
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState("all");
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [inviteOpen, setInviteOpen] = useState(false);
   const [selectedUser, setSelectedUser] = useState<EmbyUser | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<EmbyUser | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -81,15 +79,21 @@ export function Dashboard({ data, onRefresh, onMutate, onLogout }: DashboardProp
     }
   }
 
-  async function invitePlexUser(payload: { operation: "invite"; invitedId: number; username: string; librarySectionIds: number[]; expiration: string | null }) {
-    try {
-      await onMutate(payload);
-      await onRefresh();
-      toast.success(`Library invitation sent to ${payload.username}`);
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Unable to invite Plex user");
-      throw error;
+  function openPlexInvite() {
+    const plexWindow = window.open(
+      "https://app.plex.tv/desktop/#!/settings/manage-library-access",
+      "harborgate-plex-library-access",
+      "popup=yes,width=1120,height=820,resizable=yes,scrollbars=yes",
+    );
+    if (!plexWindow) {
+      toast.error("Allow pop-ups to open Plex library access");
+      return;
     }
+    plexWindow.opener = null;
+    plexWindow.focus();
+    window.addEventListener("focus", () => {
+      window.setTimeout(() => onRefresh().catch(() => undefined), 500);
+    }, { once: true });
   }
 
   async function toggleUser(user: EmbyUser, enabled: boolean) {
@@ -175,8 +179,8 @@ export function Dashboard({ data, onRefresh, onMutate, onLogout }: DashboardProp
 
         {view === "instances" ? <InstanceManager csrf={data.csrf} /> : <div className="mx-auto max-w-7xl px-4 py-7 sm:px-7 lg:px-10 lg:py-10">
           <section className="mb-8 flex flex-col justify-between gap-5 sm:flex-row sm:items-end">
-            <div><p className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-[#0F9F8F]">{data.serverLabel} · People & access</p><h1 className="text-3xl font-semibold tracking-[-0.04em] sm:text-4xl">{data.serverId === "plex" ? "Shared users" : "User profiles"}</h1><p className="mt-2 text-sm text-slate-500">{data.serverId === "plex" ? "Invite people and manage access to selected Plex libraries." : `Manage who can access your ${data.serverLabel} media server.`}</p></div>
-            {data.serverId === "plex" ? <Button onClick={() => setInviteOpen(true)} className="h-11 rounded-xl bg-[#0F9F8F] px-5 font-semibold text-white shadow-lg shadow-teal-800/10 hover:bg-[#0b887b]"><Plus className="mr-2 h-4 w-4" /> Invite Plex user</Button> : <Button onClick={() => { setSelectedUser(null); setDialogOpen(true); }} className="h-11 rounded-xl bg-[#0F9F8F] px-5 font-semibold text-white shadow-lg shadow-teal-800/10 hover:bg-[#0b887b]"><Plus className="mr-2 h-4 w-4" /> New profile</Button>}
+            <div><p className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-[#0F9F8F]">{data.serverLabel} · People & access</p><h1 className="text-3xl font-semibold tracking-[-0.04em] sm:text-4xl">{data.serverId === "plex" ? "Shared users" : "User profiles"}</h1><p className="mt-2 text-sm text-slate-500">{data.serverId === "plex" ? "Grant library access in Plex Web, then return here to manage shared users." : `Manage who can access your ${data.serverLabel} media server.`}</p></div>
+            {data.serverId === "plex" ? <Button onClick={openPlexInvite} className="h-11 rounded-xl bg-[#0F9F8F] px-5 font-semibold text-white shadow-lg shadow-teal-800/10 hover:bg-[#0b887b]"><ExternalLink className="mr-2 h-4 w-4" /> Invite Plex user</Button> : <Button onClick={() => { setSelectedUser(null); setDialogOpen(true); }} className="h-11 rounded-xl bg-[#0F9F8F] px-5 font-semibold text-white shadow-lg shadow-teal-800/10 hover:bg-[#0b887b]"><Plus className="mr-2 h-4 w-4" /> New profile</Button>}
           </section>
 
           <section className={`mb-7 grid grid-cols-2 gap-3 ${data.serverId === "plex" ? "lg:grid-cols-3" : "lg:grid-cols-4"}`}>
@@ -186,7 +190,7 @@ export function Dashboard({ data, onRefresh, onMutate, onLogout }: DashboardProp
           <section className="overflow-hidden rounded-[1.5rem] border border-slate-200/80 bg-white shadow-sm shadow-slate-200/60 dark:border-slate-700/70 dark:bg-[#10283a] dark:shadow-none">
             <div className="flex flex-col gap-3 border-b border-slate-100 p-4 dark:border-slate-700/70 sm:flex-row sm:items-center sm:justify-between sm:p-5"><div className="relative w-full sm:max-w-sm"><Search className="absolute left-3.5 top-3 h-4 w-4 text-slate-400" /><Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder={data.serverId === "plex" ? "Search shared users…" : "Search profiles…"} className="h-10 rounded-xl bg-slate-50 pl-10 focus-visible:ring-[#0F9F8F] dark:bg-[#0b1f2e]" />{search && <button onClick={() => setSearch("")} className="absolute right-3 top-3 text-slate-400"><X className="h-4 w-4" /></button>}</div><Select value={filter} onValueChange={setFilter}><SelectTrigger className="h-10 w-full rounded-xl sm:w-40"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">All {data.serverId === "plex" ? "users" : "profiles"}</SelectItem><SelectItem value="active">Active</SelectItem>{data.serverId !== "plex" && <SelectItem value="expiring">Expiring soon</SelectItem>}<SelectItem value="disabled">Disabled</SelectItem></SelectContent></Select></div>
 
-            {filtered.length === 0 ? <div className="flex flex-col items-center px-6 py-14 text-center"><img src="/assets/harborgate-empty.png" alt="No matching users" className="mb-5 h-32 w-32 object-contain" /><h3 className="font-semibold">No {data.serverId === "plex" ? "shared users" : "profiles"} found</h3><p className="mt-1 max-w-sm text-sm text-slate-500 dark:text-slate-400">Try another search or filter{data.serverId === "plex" ? ", or invite a Plex username to selected libraries." : `, or create a new ${data.serverLabel} profile.`}</p></div> : <div className="divide-y divide-slate-100 dark:divide-slate-700/70">{filtered.map((user) => {
+            {filtered.length === 0 ? <div className="flex flex-col items-center px-6 py-14 text-center"><img src="/assets/harborgate-empty.png" alt="No matching users" className="mb-5 h-32 w-32 object-contain" /><h3 className="font-semibold">No {data.serverId === "plex" ? "shared users" : "profiles"} found</h3><p className="mt-1 max-w-sm text-sm text-slate-500 dark:text-slate-400">Try another search or filter{data.serverId === "plex" ? ", or open Plex Web to grant library access." : `, or create a new ${data.serverLabel} profile.`}</p></div> : <div className="divide-y divide-slate-100 dark:divide-slate-700/70">{filtered.map((user) => {
               const status = expirationState(user, data.serverId === "plex");
               return <article key={user.Id} className={`group grid gap-4 p-4 transition hover:bg-slate-50/70 dark:hover:bg-slate-800/40 sm:items-center sm:px-5 ${data.serverId === "plex" ? "sm:grid-cols-[minmax(220px,1.5fr)_minmax(100px,.7fr)_minmax(110px,.75fr)_130px]" : "sm:grid-cols-[minmax(220px,1.5fr)_minmax(100px,.65fr)_minmax(110px,.7fr)_minmax(110px,.75fr)_105px_38px]"}`}>
                 <div className="flex min-w-0 items-start gap-3"><div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[#e7f8f5] text-sm font-bold text-[#087d71] dark:bg-teal-950 dark:text-[#55d7c6]">{initials(user.Name)}</div><div className="min-w-0 flex-1"><button onClick={() => { setSelectedUser(user); setDialogOpen(true); }} className="block max-w-full text-left"><p className="truncate font-semibold">{user.Name}</p><p className="mt-0.5 flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400">{data.serverId === "plex" ? <ShieldCheck className="h-3.5 w-3.5 text-amber-500" /> : user.HasPassword ? <ShieldCheck className="h-3.5 w-3.5 text-[#0F9F8F]" /> : <CircleUserRound className="h-3.5 w-3.5" />}{data.serverId === "plex" ? "Plex shared account" : user.HasPassword ? "Password protected" : "No password"}</p></button><div className="mt-2 flex items-center gap-2"><label htmlFor={`notes-${user.Id}`} className="shrink-0 text-xs font-semibold text-slate-500 dark:text-slate-400">Notes:</label><Input key={`${user.Id}-${user.notes}`} id={`notes-${user.Id}`} defaultValue={user.notes} maxLength={100} disabled={busyId === user.Id} onBlur={(event) => saveNotes(user, event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }} placeholder="Add a note" className="h-7 min-w-0 rounded-lg border-slate-200 bg-white px-2.5 text-xs focus-visible:ring-[#0F9F8F] dark:border-slate-700 dark:bg-[#0b1f2e]" /></div>{data.serverId !== "plex" && <div className="mt-2 flex items-center gap-2"><label htmlFor={`admin-${user.Id}`} className="shrink-0 text-xs font-semibold text-slate-500 dark:text-slate-400">Admin:</label><Input key={`${user.Id}-${user.admin}`} id={`admin-${user.Id}`} defaultValue={user.admin} maxLength={100} disabled={busyId === user.Id} onBlur={(event) => saveAdmin(user, event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }} placeholder="Owner name" className="h-7 min-w-0 rounded-lg border-slate-200 bg-white px-2.5 text-xs focus-visible:ring-[#0F9F8F] dark:border-slate-700 dark:bg-[#0b1f2e]" /></div>}</div></div>
@@ -203,7 +207,6 @@ export function Dashboard({ data, onRefresh, onMutate, onLogout }: DashboardProp
       </main>
 
       {data.serverId === "plex" ? <PlexExpirationDialog open={dialogOpen} user={selectedUser} onOpenChange={setDialogOpen} onSave={(expiration) => saveUser({ operation: "update", id: selectedUser?.Id, name: selectedUser?.Name, expiration })} /> : <UserDialog open={dialogOpen} user={selectedUser} serverId={data.serverId} libraries={data.mediaLibraries} onOpenChange={setDialogOpen} onSave={saveUser} />}
-      {data.serverId === "plex" && <PlexInviteDialog open={inviteOpen} libraries={data.plexLibraries} onOpenChange={setInviteOpen} onInvite={invitePlexUser} />}
       <Sheet open={historyOpen} onOpenChange={setHistoryOpen}><SheetContent className="w-full overflow-y-auto sm:max-w-md"><SheetHeader className="text-left"><SheetTitle className="text-2xl tracking-tight">Expiration history</SheetTitle></SheetHeader><div className="mt-7 space-y-3">{data.events.length === 0 ? <div className="rounded-2xl bg-slate-50 p-8 text-center"><History className="mx-auto mb-3 h-8 w-8 text-slate-300" /><p className="text-sm text-slate-500">No automatic expiration events yet.</p></div> : data.events.map((event) => <div key={event.id} className="flex gap-3 rounded-2xl border border-slate-100 p-4"><div className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl ${event.action === "expired" ? "bg-rose-50 text-rose-600" : "bg-emerald-50 text-emerald-600"}`}>{event.action === "expired" ? <UserX className="h-4 w-4" /> : <UserRoundCheck className="h-4 w-4" />}</div><div><p className="text-sm font-medium">{event.userName} was {event.action}</p><p className="mt-1 text-xs text-slate-500">{new Intl.DateTimeFormat("en", { dateStyle: "medium", timeStyle: "short" }).format(new Date(event.occurredAt))}</p></div></div>)}</div></SheetContent></Sheet>
       <AlertDialog open={Boolean(deleteTarget)} onOpenChange={(open) => !open && setDeleteTarget(null)}><AlertDialogContent className="rounded-[1.5rem]"><AlertDialogHeader><AlertDialogTitle>Delete {deleteTarget?.Name}?</AlertDialogTitle><AlertDialogDescription>This permanently removes the profile from {data.serverLabel}. This action cannot be undone.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel className="rounded-xl">Keep profile</AlertDialogCancel><AlertDialogAction onClick={removeUser} className="rounded-xl bg-rose-600 text-white hover:bg-rose-700">Delete profile</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
     </div>
