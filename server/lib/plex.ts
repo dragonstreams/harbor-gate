@@ -251,31 +251,40 @@ export async function listPlexLibraryIds(token: string, machineIdentifier: strin
 export type PlexUserOption = { id: number; username: string; title: string };
 
 function plexUserOptions(data: unknown, query: string): PlexUserOption[] {
-  const container = data && typeof data === "object" && !Array.isArray(data) ? data as Record<string, unknown> : {};
-  const mediaContainer = container.MediaContainer && typeof container.MediaContainer === "object"
-    ? container.MediaContainer as Record<string, unknown>
-    : {};
-  const candidates = Array.isArray(data)
-    ? data
-    : Array.isArray(container.users)
-      ? container.users
-      : Array.isArray(container.results)
-        ? container.results
-        : Array.isArray(container.User)
-          ? container.User
-          : Array.isArray(mediaContainer.User)
-            ? mediaContainer.User
-            : [];
+  const queue: unknown[] = [data];
+  const candidates: Record<string, unknown>[] = [];
+  const visited = new Set<object>();
+  while (queue.length) {
+    const value = queue.shift();
+    if (!value || typeof value !== "object" || visited.has(value)) continue;
+    visited.add(value);
+    if (Array.isArray(value)) {
+      queue.push(...value);
+      continue;
+    }
+    const account = value as Record<string, unknown>;
+    const id = account.id ?? account.userId ?? account.userID ?? account.accountId;
+    const username = account.username ?? account.userName ?? account.name;
+    const title = account.title ?? account.friendlyName ?? account.email;
+    if ((typeof id === "number" || typeof id === "string") && (typeof username === "string" || typeof title === "string")) {
+      candidates.push(account);
+    }
+    for (const child of Object.values(account)) {
+      if (child && typeof child === "object") queue.push(child);
+    }
+  }
   const normalizedQuery = query.toLowerCase();
-  return candidates.flatMap((candidate) => {
-    if (!candidate || typeof candidate !== "object") return [];
-    const account = candidate as Record<string, unknown>;
-    const id = account.id ?? account.userId ?? account.userID;
-    const username = typeof account.username === "string" ? account.username : "";
-    const title = typeof account.title === "string" ? account.title : username;
+  const seen = new Set<number>();
+  return candidates.flatMap((account) => {
+    const rawId = account.id ?? account.userId ?? account.userID ?? account.accountId;
+    const username = [account.username, account.userName, account.name, account.title, account.email].find((value): value is string => typeof value === "string" && Boolean(value.trim())) ?? "";
+    const title = [account.title, account.friendlyName, account.username, account.userName, account.email].find((value): value is string => typeof value === "string" && Boolean(value.trim())) ?? username;
     if (!username || ![username, title].some((value) => value.toLowerCase().includes(normalizedQuery))) return [];
-    if ((typeof id !== "number" && typeof id !== "string") || !String(id).match(/^\d+$/)) return [];
-    return [{ id: Number(id), username, title }];
+    if ((typeof rawId !== "number" && typeof rawId !== "string") || !String(rawId).match(/^\d+$/)) return [];
+    const id = Number(rawId);
+    if (seen.has(id)) return [];
+    seen.add(id);
+    return [{ id, username, title }];
   }).slice(0, 8);
 }
 
@@ -304,9 +313,19 @@ async function plexUserSearchRequest(token: string, path: string, query: string)
 }
 
 export async function searchPlexUsers(token: string, query: string): Promise<PlexUserOption[]> {
-  const currentResults = await plexUserSearchRequest(token, "/api/v2/users", query).catch(() => []);
-  if (currentResults.length) return currentResults;
-  return plexUserSearchRequest(token, "/api/users", query).catch(() => []);
+  const encodedQuery = encodeURIComponent(query);
+  const paths = [
+    "/api/v2/users",
+    `/api/v2/users/${encodedQuery}`,
+    `/api/users/${encodedQuery}`,
+    "/api/users",
+    "/api/v2/home/users",
+  ];
+  for (const path of paths) {
+    const results = await plexUserSearchRequest(token, path, query).catch(() => []);
+    if (results.length) return results;
+  }
+  return [];
 }
 
 export async function invitePlexUser(token: string, machineIdentifier: string, invitedUser: PlexUserOption, librarySectionIds: number[]) {
