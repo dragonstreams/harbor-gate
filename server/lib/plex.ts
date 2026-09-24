@@ -250,16 +250,7 @@ export async function listPlexLibraryIds(token: string, machineIdentifier: strin
 
 export type PlexUserOption = { id: number; username: string; title: string };
 
-export async function searchPlexUsers(token: string, query: string): Promise<PlexUserOption[]> {
-  const url = new URL("/api/v2/users", PLEX_TV);
-  url.searchParams.set("query", query);
-  url.searchParams.set("X-Plex-Token", token);
-  const response = await fetch(url, {
-    signal: AbortSignal.timeout(15_000),
-    headers: headers(token),
-  });
-  if (!response.ok) throw new Error(`Plex user search failed (${response.status})`);
-  const data = await response.json() as unknown;
+function plexUserOptions(data: unknown, query: string): PlexUserOption[] {
   const container = data && typeof data === "object" && !Array.isArray(data) ? data as Record<string, unknown> : {};
   const mediaContainer = container.MediaContainer && typeof container.MediaContainer === "object"
     ? container.MediaContainer as Record<string, unknown>
@@ -270,17 +261,52 @@ export async function searchPlexUsers(token: string, query: string): Promise<Ple
       ? container.users
       : Array.isArray(container.results)
         ? container.results
-        : Array.isArray(mediaContainer.User)
-          ? mediaContainer.User
-          : [];
+        : Array.isArray(container.User)
+          ? container.User
+          : Array.isArray(mediaContainer.User)
+            ? mediaContainer.User
+            : [];
+  const normalizedQuery = query.toLowerCase();
   return candidates.flatMap((candidate) => {
     if (!candidate || typeof candidate !== "object") return [];
     const account = candidate as Record<string, unknown>;
-    const id = account.id ?? account.userId;
+    const id = account.id ?? account.userId ?? account.userID;
     const username = typeof account.username === "string" ? account.username : "";
-    if (!username || (typeof id !== "number" && typeof id !== "string") || !String(id).match(/^\d+$/)) return [];
-    return [{ id: Number(id), username, title: typeof account.title === "string" ? account.title : username }];
+    const title = typeof account.title === "string" ? account.title : username;
+    if (!username || ![username, title].some((value) => value.toLowerCase().includes(normalizedQuery))) return [];
+    if ((typeof id !== "number" && typeof id !== "string") || !String(id).match(/^\d+$/)) return [];
+    return [{ id: Number(id), username, title }];
   }).slice(0, 8);
+}
+
+async function plexUserSearchRequest(token: string, path: string, query: string) {
+  const url = new URL(path, PLEX_TV);
+  url.searchParams.set("query", query);
+  if (path === "/api/users") url.searchParams.set("username", query);
+  url.searchParams.set("X-Plex-Token", token);
+  url.searchParams.set("X-Plex-Client-Identifier", CLIENT_ID);
+  const response = await fetch(url, {
+    signal: AbortSignal.timeout(15_000),
+    headers: headers(token),
+  });
+  const text = await response.text();
+  if (!response.ok) return [];
+  const jsonText = text.replace(/^\)\]\}',?\s*/, "").trim();
+  if (jsonText && !/^[?]?true$/i.test(jsonText)) {
+    try {
+      return plexUserOptions(JSON.parse(jsonText) as unknown, query);
+    } catch {
+      const users = [...text.matchAll(/<User\b([^>]*)\/?\s*>/gi)].map((match) => xmlAttributes(match[1]));
+      return plexUserOptions(users, query);
+    }
+  }
+  return [];
+}
+
+export async function searchPlexUsers(token: string, query: string): Promise<PlexUserOption[]> {
+  const currentResults = await plexUserSearchRequest(token, "/api/v2/users", query).catch(() => []);
+  if (currentResults.length) return currentResults;
+  return plexUserSearchRequest(token, "/api/users", query).catch(() => []);
 }
 
 export async function invitePlexUser(token: string, machineIdentifier: string, invitedUser: PlexUserOption, librarySectionIds: number[]) {
