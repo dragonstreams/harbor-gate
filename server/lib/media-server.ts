@@ -69,6 +69,7 @@ async function mediaFetch<T>(serverId: ServerId, token: string, path: string, in
     redirect: "error",
     signal: AbortSignal.timeout(15_000),
     headers: {
+      Accept: "application/json",
       "Content-Type": "application/json",
       ...authenticationHeaders(serverId, token),
       ...init?.headers,
@@ -123,8 +124,10 @@ export async function listLibraries(serverId: ServerId, token: string, serverUrl
     .map((folder) => ({ id: folder.ItemId || folder.Id!, name: folder.Name!, type: folder.CollectionType ?? "mixed" }));
 }
 
-export const listFeatures = (serverId: ServerId, token: string, serverUrl?: string) =>
-  mediaFetch<{ Id: string; Name: string; FeatureType?: string }[]>(serverId, token, "/Features", undefined, serverUrl);
+export async function listFeatures(serverId: ServerId, token: string, serverUrl?: string) {
+  const features = await mediaFetch<unknown>(serverId, token, "/Features", undefined, serverUrl);
+  return Array.isArray(features) ? features as { Id: string; Name: string; FeatureType?: string }[] : [];
+}
 
 export async function createUser(serverId: ServerId, token: string, name: string, password: string, serverUrl?: string) {
   const existingIds = serverId === "emby"

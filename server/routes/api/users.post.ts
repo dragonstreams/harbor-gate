@@ -208,13 +208,10 @@ export default defineHandler(async (event) => {
     const folderPolicy = await validateFolderPolicy(serverId, token, serverUrl, body.policy);
     let traktFeatureIds: string[] = [];
     if (serverId === "emby") {
-      const features = await listFeatures(serverId, token, serverUrl);
+      const features = await listFeatures(serverId, token, serverUrl).catch(() => []);
       traktFeatureIds = features
         .filter((feature) => `${feature.Name} ${feature.Id}`.toLowerCase().includes("trakt"))
         .map((feature) => feature.Id);
-      if (traktFeatureIds.length === 0) {
-        throw createError({ statusCode: 502, statusMessage: "The Emby server did not expose its Trakt feature ID" });
-      }
     }
     const created = await createUser(serverId, token, name, password, serverUrl);
     try {
