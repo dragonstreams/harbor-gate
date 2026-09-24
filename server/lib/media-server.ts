@@ -45,17 +45,22 @@ function authenticationHeaders(serverId: ServerId, token?: string): Record<strin
 }
 
 async function parseResponse<T>(serverId: ServerId, response: Response): Promise<T> {
+  const text = response.status === 204 || response.headers.get("content-length") === "0" ? "" : await response.text();
+  const normalized = text.trim().replace(/^\?+(?=(?:true|false|null)\s*$)/i, "");
   if (!response.ok) {
-    const detail = await response.text();
     const safeDetail = response.status === 401
       ? "Invalid administrator credentials"
-      : detail.trim().toLowerCase() === "true"
+      : /^(?:true|false)$/i.test(normalized)
         ? `${MEDIA_SERVERS[serverId].label} returned an invalid proxy response. Verify the server address and API path.`
-        : detail.slice(0, 180);
+        : text.slice(0, 180);
     throw new Error(safeDetail || `${MEDIA_SERVERS[serverId].label} request failed (${response.status})`);
   }
-  if (response.status === 204 || response.headers.get("content-length") === "0") return undefined as T;
-  return response.json() as Promise<T>;
+  if (!normalized) return undefined as T;
+  try {
+    return JSON.parse(normalized) as T;
+  } catch {
+    throw new Error(`${MEDIA_SERVERS[serverId].label} returned an unexpected response. Verify that the server address points directly to the media server.`);
+  }
 }
 
 async function mediaFetch<T>(serverId: ServerId, token: string, path: string, init?: RequestInit, serverUrl = MEDIA_SERVERS[serverId].url): Promise<T> {
@@ -122,13 +127,21 @@ export const listFeatures = (serverId: ServerId, token: string, serverUrl?: stri
   mediaFetch<{ Id: string; Name: string; FeatureType?: string }[]>(serverId, token, "/Features", undefined, serverUrl);
 
 export async function createUser(serverId: ServerId, token: string, name: string, password: string, serverUrl?: string) {
-  if (serverId === "jellyfin") {
-    return mediaFetch<EmbyUser>(serverId, token, "/Users/New", {
-      method: "POST",
-      body: JSON.stringify({ Name: name, Password: password }),
-    }, serverUrl);
+  const existingIds = serverId === "emby"
+    ? new Set((await listUsers(serverId, token, serverUrl)).map((user) => user.Id))
+    : new Set<string>();
+  const result = await mediaFetch<unknown>(serverId, token, "/Users/New", {
+    method: "POST",
+    body: JSON.stringify(serverId === "jellyfin" ? { Name: name, Password: password } : { Name: name }),
+  }, serverUrl);
+  if (result && typeof result === "object" && "Id" in result && typeof result.Id === "string") {
+    return result as EmbyUser;
   }
-  return mediaFetch<EmbyUser>(serverId, token, `/Users/New?Name=${encodeURIComponent(name)}`, { method: "POST" }, serverUrl);
+  if (serverId === "emby") {
+    const created = (await listUsers(serverId, token, serverUrl)).find((user) => user.Name === name && !existingIds.has(user.Id));
+    if (created) return created;
+  }
+  throw new Error(`${MEDIA_SERVERS[serverId].label} did not return the created profile`);
 }
 
 export async function setUserPassword(serverId: ServerId, token: string, userId: string, password: string, serverUrl?: string) {
