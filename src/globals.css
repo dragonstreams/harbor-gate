@@ -34,6 +34,32 @@
     --sidebar-ring: 173 83% 34%;
   }
 
+  .dark {
+    --background: 207 48% 9%;
+    --foreground: 204 36% 94%;
+    --card: 207 42% 13%;
+    --card-foreground: 204 36% 94%;
+    --popover: 207 42% 13%;
+    --popover-foreground: 204 36% 94%;
+    --primary: 173 72% 43%;
+    --primary-foreground: 207 48% 9%;
+    --secondary: 207 33% 18%;
+    --secondary-foreground: 168 46% 84%;
+    --muted: 207 32% 17%;
+    --muted-foreground: 207 14% 67%;
+    --accent: 207 33% 19%;
+    --accent-foreground: 168 54% 80%;
+    --destructive: 352 67% 52%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 207 29% 24%;
+    --input: 207 29% 24%;
+    --ring: 173 72% 43%;
+    --sidebar-background: 208 55% 8%;
+    --sidebar-foreground: 204 35% 92%;
+    --sidebar-accent: 207 39% 16%;
+    --sidebar-border: 207 32% 19%;
+  }
+
   * { @apply border-border; }
   html { scroll-behavior: smooth; }
   body {
@@ -48,6 +74,33 @@
   from { opacity: 0; transform: translateY(10px); }
   to { opacity: 1; transform: translateY(0); }
 }
+
+html,
+body,
+.bg-white,
+.bg-slate-50,
+.bg-slate-100 {
+  transition: background-color 180ms ease, color 180ms ease, border-color 180ms ease;
+}
+
+.dark [class~="bg-white"] { background-color: hsl(var(--card)); }
+.dark [class~="bg-slate-50"],
+.dark [class~="bg-slate-50/70"],
+.dark [class~="bg-slate-50/80"] { background-color: hsl(var(--muted)); }
+.dark [class~="bg-slate-100"] { background-color: hsl(207 32% 19%); }
+.dark [class~="border-slate-100"],
+.dark [class~="border-slate-200"],
+.dark [class~="border-slate-200/80"] { border-color: hsl(var(--border)); }
+.dark [class~="divide-slate-100"] > :not([hidden]) ~ :not([hidden]) { border-color: hsl(var(--border)); }
+.dark [class~="text-slate-500"],
+.dark [class~="text-slate-600"] { color: hsl(var(--muted-foreground)); }
+.dark [class~="text-[#102a43]"] { color: hsl(var(--foreground)); }
+.dark [class~="bg-[#e7f8f5]"] { background-color: hsl(173 45% 16%); }
+.dark [class~="bg-[#effaf8]"] { background-color: hsl(173 38% 15%); }
+.dark [class~="text-[#087d71]"],
+.dark [class~="text-[#116b63]"],
+.dark [class~="text-[#356a65]"] { color: hsl(169 56% 72%); }
+.dark input[type="date"] { color-scheme: dark; }
 
 main > div > section {
   animation: harbor-in 420ms ease-out both;

@@ -58,7 +58,7 @@ const Index = () => {
   }
 
   if (loading) {
-    return <div className="flex min-h-screen items-center justify-center bg-[#0b2135] text-white"><div className="text-center"><img src="/assets/harborgate-logo.png" alt="HarborGate" className="mx-auto mb-5 h-16 w-16 rounded-2xl" /><Loader2 className="mx-auto h-5 w-5 animate-spin text-[#55d7c6]" /><p className="mt-3 text-sm text-slate-400">Securing your harbor…</p></div></div>;
+    return <div className="flex min-h-screen items-center justify-center bg-[#eaf2f5] text-[#102a43] dark:bg-[#071521] dark:text-white"><div className="text-center"><img src="/assets/harborgate-logo.png" alt="HarborGate" className="mx-auto mb-5 h-16 w-16 rounded-2xl" /><Loader2 className="mx-auto h-5 w-5 animate-spin text-[#0F9F8F] dark:text-[#55d7c6]" /><p className="mt-3 text-sm text-slate-500 dark:text-slate-400">Securing your harbor…</p></div></div>;
   }
 
   if (!data) return <LoginScreen runtime={runtime} onLogin={login} onPlexLogin={plexLogin} onPlexServerSelect={selectPlexServer} />;

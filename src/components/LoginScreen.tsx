@@ -1,5 +1,6 @@
 import { FormEvent, useState } from "react";
 import { ArrowRight, Eye, EyeOff, Loader2, LockKeyhole, Server, ShieldCheck } from "lucide-react";
+import { ThemeToggle } from "@/components/ThemeToggle";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -48,32 +49,33 @@ export function LoginScreen({ runtime, onLogin, onPlexLogin, onPlexServerSelect 
   }
 
   return (
-    <main className="relative min-h-screen overflow-hidden bg-[#0b1f33] text-white">
-      <img src="/assets/harborgate-login-bg.png" alt="" className="absolute inset-0 h-full w-full object-cover opacity-60" />
-      <div className="absolute inset-0 bg-[#0b1f33]/35" />
+    <main className="relative min-h-screen overflow-hidden bg-[#dcebef] text-[#102a43] dark:bg-[#071521] dark:text-white">
+      <img src="/assets/harborgate-login-bg.png" alt="" className="absolute inset-0 h-full w-full object-cover opacity-20 dark:opacity-60" />
+      <div className="absolute inset-0 bg-white/35 dark:bg-[#0b1f33]/35" />
+      <div className="absolute right-5 top-5 z-20 rounded-xl border border-slate-300/70 bg-white/70 shadow-sm backdrop-blur dark:border-white/10 dark:bg-[#0b2135]/70"><ThemeToggle /></div>
       <div className="relative z-10 mx-auto grid min-h-screen max-w-7xl items-center px-5 py-8 lg:grid-cols-[0.9fr_1.1fr] lg:gap-20 lg:px-12">
         <section className="order-2 hidden lg:block">
           <div className="mb-8 flex items-center gap-3">
-            <div className="rounded-2xl bg-white/10 p-2 ring-1 ring-white/15 backdrop-blur">
+            <div className="rounded-2xl bg-white/60 p-2 ring-1 ring-slate-300/70 backdrop-blur dark:bg-white/10 dark:ring-white/15">
               <img src="/assets/harborgate-logo.png" alt="HarborGate" className="h-12 w-12 rounded-xl" />
             </div>
             <span className="text-xl font-semibold tracking-tight">HarborGate</span>
           </div>
-          <p className="mb-4 text-sm font-semibold uppercase tracking-[0.24em] text-[#55d7c6]">Secure media administration</p>
+          <p className="mb-4 text-sm font-semibold uppercase tracking-[0.24em] text-[#087d71] dark:text-[#55d7c6]">Secure media administration</p>
           <h1 className="max-w-xl text-5xl font-semibold leading-[1.08] tracking-[-0.04em]">Your media community,<br />safely managed.</h1>
-          <p className="mt-6 max-w-lg text-lg leading-8 text-slate-300">Manage Emby and Jellyfin profiles, access policies, and account lifecycles from one calm, secure workspace.</p>
-          <div className="mt-10 flex gap-6 text-sm text-slate-300">
-            <span className="flex items-center gap-2"><ShieldCheck className="h-4 w-4 text-[#55d7c6]" /> Credentials stay server-side</span>
-            <span className="flex items-center gap-2"><Server className="h-4 w-4 text-[#55d7c6]" /> Direct server connection</span>
+          <p className="mt-6 max-w-lg text-lg leading-8 text-slate-600 dark:text-slate-300">Manage Emby and Jellyfin profiles, access policies, and account lifecycles from one calm, secure workspace.</p>
+          <div className="mt-10 flex gap-6 text-sm text-slate-600 dark:text-slate-300">
+            <span className="flex items-center gap-2"><ShieldCheck className="h-4 w-4 text-[#0F9F8F] dark:text-[#55d7c6]" /> Credentials stay server-side</span>
+            <span className="flex items-center gap-2"><Server className="h-4 w-4 text-[#0F9F8F] dark:text-[#55d7c6]" /> Direct server connection</span>
           </div>
         </section>
 
         <section className="mx-auto w-full max-w-md lg:order-1 lg:mx-0">
           <div className="mb-8 flex items-center gap-3 lg:hidden">
             <img src="/assets/harborgate-logo.png" alt="HarborGate" className="h-12 w-12 rounded-2xl" />
-            <div><p className="text-lg font-semibold">HarborGate</p><p className="text-xs text-slate-400">Secure control panel</p></div>
+            <div><p className="text-lg font-semibold">HarborGate</p><p className="text-xs text-slate-500 dark:text-slate-400">Secure control panel</p></div>
           </div>
-          <div className="rounded-[2rem] border border-white/15 bg-white p-6 text-[#102a43] shadow-2xl shadow-[#06121f]/40 sm:p-9">
+          <div className="rounded-[2rem] border border-white/60 bg-white p-6 text-[#102a43] shadow-2xl shadow-[#315566]/20 dark:border-white/10 dark:bg-[#10283a] dark:text-slate-100 dark:shadow-[#020a10]/50 sm:p-9">
             <div className="mb-8 inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-[#e7f8f5] text-[#087d71]"><LockKeyhole className="h-5 w-5" /></div>
             <h2 className="text-3xl font-semibold tracking-[-0.035em]">Welcome back</h2>
             <p className="mt-2 text-sm leading-6 text-slate-500">Choose a media server and authenticate with its administrator account.</p>
