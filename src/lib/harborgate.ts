@@ -30,6 +30,7 @@ export type EmbyUser = {
   expiration: string | null;
   admin: string;
   notes: string;
+  hasSavedPassword?: boolean;
 };
 
 export type ExpirationEvent = {

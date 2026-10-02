@@ -5,6 +5,7 @@ import { createUser, deleteUser, getUser, listFeatures, listLibraries, listUsers
 import { enforceExpirations } from "../../lib/expiration";
 import { invitePlexUser, listPlexLibraries, listPlexLibraryIds, listPlexShares, restorePlexShare, revokePlexShare, searchPlexUsers } from "../../lib/plex";
 import { requireSession } from "../../lib/session";
+import { encryptProfilePassword, profilePasswordKey } from "../../lib/profile-passwords";
 import { expirationKey, getExpiration, readData, updateData } from "../../lib/store";
 import type { EmbyPolicy } from "../../lib/types";
 
@@ -237,15 +238,19 @@ export default defineHandler(async (event) => {
           throw createError({ statusCode: 502, statusMessage: `${serverId === "emby" ? "Emby" : "Jellyfin"} did not apply the selected library access` });
         }
       }
-      if (expiration || adminName) {
-        await updateData((data) => {
+      const passwordScope = profilePasswordKey(serverId, serverUrl, created.Id);
+      const encryptedPassword = await encryptProfilePassword(password, passwordScope);
+      await updateData((data) => {
+        data.profilePasswords[passwordScope] = encryptedPassword;
+        if (expiration || adminName) {
           data.expirations[expirationKey(serverId, created.Id)] = { expiresAt: expiration, disabledByHarborGate: false, adminName };
-        });
-      }
+        }
+      });
       await enforceExpirations(serverId, token, serverUrl);
       return { ok: true };
     } catch (error) {
       await deleteUser(serverId, token, created.Id, serverUrl).catch(() => undefined);
+      await updateData((data) => { delete data.profilePasswords[profilePasswordKey(serverId, serverUrl, created.Id)]; }).catch(() => undefined);
       throw error;
     }
   }
@@ -259,6 +264,7 @@ export default defineHandler(async (event) => {
   if (body.operation === "delete") {
     await deleteUser(serverId, token, user.Id, serverUrl);
     await updateData((data) => {
+      delete data.profilePasswords[profilePasswordKey(serverId, serverUrl, user.Id)];
       delete data.expirations[expirationKey(serverId, user.Id)];
       if (serverId === "emby") delete data.expirations[user.Id];
     });

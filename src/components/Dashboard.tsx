@@ -13,6 +13,7 @@ import { Switch } from "@/components/ui/switch";
 import type { DashboardData, EmbyUser } from "@/lib/harborgate";
 import { InstanceManager } from "./InstanceManager";
 import { PlexExpirationDialog } from "./PlexExpirationDialog";
+import { ProfilePassword } from "./ProfilePassword";
 import { UserDialog } from "./UserDialog";
 
 interface DashboardProps {
@@ -199,6 +200,7 @@ export function Dashboard({ data, onRefresh, onMutate, onLogout }: DashboardProp
                 {data.serverId !== "plex" && <div><p className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400">Connections</p><p className="text-sm font-semibold text-[#24618b] dark:text-sky-300">{connectionLimit(user, data.serverId)}</p></div>}
                 <div className="flex items-center gap-2"><Switch disabled={busyId === user.Id} checked={!user.Policy?.IsDisabled} onCheckedChange={(checked) => toggleUser(user, checked)} className="data-[state=checked]:bg-[#0F9F8F]" /><span className="text-xs text-slate-500 dark:text-slate-400">Access enabled</span></div>
                 {data.serverId !== "plex" && <DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-9 w-9 rounded-xl"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end" className="rounded-xl"><DropdownMenuItem onClick={() => { setSelectedUser(user); setDialogOpen(true); }}>Edit profile</DropdownMenuItem><DropdownMenuItem onClick={() => setDeleteTarget(user)} className="text-rose-600"><Trash2 className="mr-2 h-4 w-4" /> Delete profile</DropdownMenuItem></DropdownMenuContent></DropdownMenu>}
+                {data.serverId !== "plex" && <div className="border-t border-border/60 pt-1 sm:col-span-full"><div className="max-w-md"><ProfilePassword key={`${data.csrf}-${user.Id}-${user.hasSavedPassword}`} user={user} csrf={data.csrf} onReset={() => { setSelectedUser(user); setDialogOpen(true); }} /></div></div>}
               </article>;
             })}</div>}
           </section>
@@ -206,7 +208,7 @@ export function Dashboard({ data, onRefresh, onMutate, onLogout }: DashboardProp
         </div>}
       </main>
 
-      {data.serverId === "plex" ? <PlexExpirationDialog open={dialogOpen} user={selectedUser} onOpenChange={setDialogOpen} onSave={(expiration) => saveUser({ operation: "update", id: selectedUser?.Id, name: selectedUser?.Name, expiration })} /> : <UserDialog open={dialogOpen} user={selectedUser} serverId={data.serverId} libraries={data.mediaLibraries} onOpenChange={setDialogOpen} onSave={saveUser} />}
+      {data.serverId === "plex" ? <PlexExpirationDialog open={dialogOpen} user={selectedUser} onOpenChange={setDialogOpen} onSave={(expiration) => saveUser({ operation: "update", id: selectedUser?.Id, name: selectedUser?.Name, expiration })} /> : <UserDialog open={dialogOpen} user={selectedUser} csrf={data.csrf} onRefresh={onRefresh} serverId={data.serverId} libraries={data.mediaLibraries} onOpenChange={setDialogOpen} onSave={saveUser} />}
       <Sheet open={historyOpen} onOpenChange={setHistoryOpen}><SheetContent className="w-full overflow-y-auto sm:max-w-md"><SheetHeader className="text-left"><SheetTitle className="text-2xl tracking-tight">Expiration history</SheetTitle></SheetHeader><div className="mt-7 space-y-3">{data.events.length === 0 ? <div className="rounded-2xl bg-slate-50 p-8 text-center"><History className="mx-auto mb-3 h-8 w-8 text-slate-300" /><p className="text-sm text-slate-500">No automatic expiration events yet.</p></div> : data.events.map((event) => <div key={event.id} className="flex gap-3 rounded-2xl border border-slate-100 p-4"><div className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl ${event.action === "expired" ? "bg-rose-50 text-rose-600" : "bg-emerald-50 text-emerald-600"}`}>{event.action === "expired" ? <UserX className="h-4 w-4" /> : <UserRoundCheck className="h-4 w-4" />}</div><div><p className="text-sm font-medium">{event.userName} was {event.action}</p><p className="mt-1 text-xs text-slate-500">{new Intl.DateTimeFormat("en", { dateStyle: "medium", timeStyle: "short" }).format(new Date(event.occurredAt))}</p></div></div>)}</div></SheetContent></Sheet>
       <AlertDialog open={Boolean(deleteTarget)} onOpenChange={(open) => !open && setDeleteTarget(null)}><AlertDialogContent className="rounded-[1.5rem]"><AlertDialogHeader><AlertDialogTitle>Delete {deleteTarget?.Name}?</AlertDialogTitle><AlertDialogDescription>This permanently removes the profile from {data.serverLabel}. This action cannot be undone.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel className="rounded-xl">Keep profile</AlertDialogCancel><AlertDialogAction onClick={removeUser} className="rounded-xl bg-rose-600 text-white hover:bg-rose-700">Delete profile</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
     </div>

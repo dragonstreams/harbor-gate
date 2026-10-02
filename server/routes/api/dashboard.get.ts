@@ -1,11 +1,14 @@
 import { defineHandler } from "nitro";
+import { setResponseHeader } from "nitro/h3";
 import { enforceExpirations } from "../../lib/expiration";
 import { listLibraries, listUsers, MEDIA_SERVERS } from "../../lib/media-server";
 import { listPlexLibraries, listPlexShares, plexShareUser, type PlexLibrary } from "../../lib/plex";
+import { profilePasswordKey } from "../../lib/profile-passwords";
 import { requireSession } from "../../lib/session";
 import { getExpiration, readData, updateData } from "../../lib/store";
 
 export default defineHandler(async (event) => {
+  setResponseHeader(event, "Cache-Control", "no-store, private");
   const session = requireSession(event);
   let users;
   let data;
@@ -55,7 +58,8 @@ export default defineHandler(async (event) => {
     isMaster: process.env.HARBORGATE_MODE !== "child",
     users: users.map((user) => {
       const expiration = getExpiration(data, session.serverId, user.Id, session.serverId === "plex" ? session.machineIdentifier : undefined);
-      return { ...user, expiration: expiration?.expiresAt ?? null, admin: expiration?.adminName ?? "", notes: expiration?.notes ?? "" };
+      const hasSavedPassword = session.serverId !== "plex" && !user.Policy?.IsAdministrator && Boolean(user.HasPassword && data.profilePasswords[profilePasswordKey(session.serverId, session.serverUrl, user.Id)]);
+      return { ...user, hasSavedPassword, expiration: expiration?.expiresAt ?? null, admin: expiration?.adminName ?? "", notes: expiration?.notes ?? "" };
     }),
     events: data.events.filter((item) =>
       (item.serverId ?? "emby") === session.serverId &&

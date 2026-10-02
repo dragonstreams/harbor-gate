@@ -4,7 +4,7 @@ import type { HarborData, ServerId } from "./types";
 
 const DATA_DIRECTORY = process.env.HARBORGATE_DATA_DIR?.trim() || resolve(process.cwd(), ".harborgate");
 const DATA_PATH = resolve(DATA_DIRECTORY, "data.json");
-const EMPTY_DATA: HarborData = { expirations: {}, events: [], instances: [], plexShares: {} };
+const EMPTY_DATA: HarborData = { expirations: {}, events: [], instances: [], plexShares: {}, profilePasswords: {} };
 let writeQueue = Promise.resolve();
 
 export const expirationKey = (serverId: ServerId, userId: string, serverScope?: string) =>
@@ -22,9 +22,10 @@ export async function readData(): Promise<HarborData> {
       events: Array.isArray(stored.events) ? stored.events : [],
       instances: Array.isArray(stored.instances) ? stored.instances : [],
       plexShares: stored.plexShares ?? {},
+      profilePasswords: stored.profilePasswords ?? {},
     };
   } catch {
-    return { expirations: {}, events: [], instances: [], plexShares: {} };
+    return { expirations: {}, events: [], instances: [], plexShares: {}, profilePasswords: {} };
   }
 }
 

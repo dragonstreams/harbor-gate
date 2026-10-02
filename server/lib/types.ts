@@ -79,4 +79,5 @@ export type HarborData = {
   events: ExpirationEvent[];
   instances: ManagedInstance[];
   plexShares: Record<string, PlexShareRecord>;
+  profilePasswords: Record<string, { iv: string; tag: string; ciphertext: string }>;
 };

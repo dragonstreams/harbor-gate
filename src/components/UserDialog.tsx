@@ -7,11 +7,15 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
+import { ProfilePassword } from "./ProfilePassword";
+import { ProfilePasswordReset } from "./ProfilePasswordReset";
 import type { EmbyUser, MediaLibrary, ServerId, UserPolicy } from "@/lib/harborgate";
 
 interface UserDialogProps {
   open: boolean;
   user: EmbyUser | null;
+  csrf: string;
+  onRefresh: () => Promise<void>;
   serverId: ServerId;
   libraries: MediaLibrary[];
   onOpenChange: (open: boolean) => void;
@@ -33,9 +37,11 @@ function toDateValue(value: string | null) {
   return new Date(date.getTime() - offset).toISOString().slice(0, 10);
 }
 
-export function UserDialog({ open, user, serverId, libraries, onOpenChange, onSave }: UserDialogProps) {
+export function UserDialog({ open, user, csrf, onRefresh, serverId, libraries, onOpenChange, onSave }: UserDialogProps) {
   const [name, setName] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [passwordSaved, setPasswordSaved] = useState(false);
   const [maxStreams, setMaxStreams] = useState("1");
   const [expiration, setExpiration] = useState("");
   const [policy, setPolicy] = useState<UserPolicy>({});
@@ -45,6 +51,8 @@ export function UserDialog({ open, user, serverId, libraries, onOpenChange, onSa
   useEffect(() => {
     setName(user?.Name ?? "");
     setPassword("");
+    setShowPassword(false);
+    setPasswordSaved(false);
     const currentLimit = serverId === "emby" ? user?.Policy?.SimultaneousStreamLimit : user?.Policy?.MaxActiveSessions;
     setMaxStreams(String(currentLimit && currentLimit >= 1 ? currentLimit : 1));
     setExpiration(toDateValue(user?.expiration ?? null));
@@ -87,10 +95,11 @@ export function UserDialog({ open, user, serverId, libraries, onOpenChange, onSa
           <div className="space-y-6 px-6 py-6">
             <div className="grid gap-5 sm:grid-cols-2">
               <div className="space-y-2"><Label htmlFor="profile-name">{user ? "Profile name" : "Username"}</Label><Input id="profile-name" value={name} onChange={(event) => setName(event.target.value)} required maxLength={100} autoComplete={user ? "off" : "username"} className="h-11 rounded-xl focus-visible:ring-[#0F9F8F]" placeholder={user ? "e.g. Alex" : "Choose a username"} /></div>
-              {!user && <div className="space-y-2"><Label htmlFor="profile-password">Password</Label><div className="relative"><KeyRound className="absolute left-3 top-3.5 h-4 w-4 text-slate-400" /><Input id="profile-password" type="password" value={password} onChange={(event) => setPassword(event.target.value)} required minLength={4} maxLength={200} autoComplete="new-password" className="h-11 rounded-xl pl-10 focus-visible:ring-[#0F9F8F]" placeholder="At least 4 characters" /></div></div>}
+              {!user && <div className="space-y-2"><Label htmlFor="profile-password">Password</Label><div className="relative"><KeyRound className="absolute left-3 top-3.5 h-4 w-4 text-slate-400" /><Input id="profile-password" type={showPassword ? "text" : "password"} value={password} onChange={(event) => setPassword(event.target.value)} required minLength={4} maxLength={200} autoComplete="new-password" className="h-11 rounded-xl pl-10 focus-visible:ring-[#0F9F8F]" placeholder="At least 4 characters" /></div><label className="flex items-center gap-2 text-xs text-muted-foreground"><Checkbox checked={showPassword} onCheckedChange={(value) => setShowPassword(value === true)} className="rounded data-[state=checked]:bg-[#0F9F8F]" />Unhide password</label><p className="text-xs text-muted-foreground">An encrypted copy is saved for administrator access.</p></div>}
               <div className="space-y-2"><Label htmlFor="expiration">Expiration date</Label><div className="relative"><CalendarDays className="absolute left-3 top-3.5 h-4 w-4 text-slate-400" /><Input id="expiration" type="date" value={expiration} onChange={(event) => setExpiration(event.target.value)} min={new Date().toISOString().slice(0, 10)} className="h-11 rounded-xl pl-10 focus-visible:ring-[#0F9F8F]" /></div></div>
               <div className="space-y-2"><Label htmlFor="max-streams">{serverId === "emby" ? "Max simultaneous streams" : "Max active sessions"}</Label><div className="relative"><Radio className="absolute left-3 top-3.5 h-4 w-4 text-slate-400" /><Input id="max-streams" type="number" value={maxStreams} onChange={(event) => setMaxStreams(event.target.value)} required min={1} max={100} className="h-11 rounded-xl pl-10 focus-visible:ring-[#0F9F8F]" /></div></div>
             </div>
+            {user && open && <div className="space-y-4"><ProfilePassword key={`${user.Id}-${passwordSaved}`} user={{ ...user, hasSavedPassword: passwordSaved || user.hasSavedPassword }} csrf={csrf} /><ProfilePasswordReset key={user.Id} userId={user.Id} csrf={csrf} onSaved={async () => { setPasswordSaved(true); await onRefresh(); }} /></div>}
             <Separator />
             <div className="space-y-3">
               <div className="flex items-center justify-between gap-5 rounded-2xl bg-[#effaf8] px-4 py-4">
