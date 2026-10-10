@@ -12,6 +12,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/co
 import { Switch } from "@/components/ui/switch";
 import type { DashboardData, EmbyUser } from "@/lib/harborgate";
 import { InstanceManager } from "./InstanceManager";
+import { HistoryTransfer } from "./HistoryTransfer";
 import { PlexExpirationDialog } from "./PlexExpirationDialog";
 import { ProfilePassword } from "./ProfilePassword";
 import { UserDialog } from "./UserDialog";
@@ -56,7 +57,7 @@ export function Dashboard({ data, onRefresh, onMutate, onLogout }: DashboardProp
   const [deleteTarget, setDeleteTarget] = useState<EmbyUser | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [busyId, setBusyId] = useState("");
-  const [view, setView] = useState<"users" | "instances">("users");
+  const [view, setView] = useState<"users" | "instances" | "transfer">("users");
 
   const manageable = data.users.filter((user) => !user.Policy?.IsAdministrator);
   const filtered = useMemo(() => manageable.filter((user) => {
@@ -158,6 +159,7 @@ export function Dashboard({ data, onRefresh, onMutate, onLogout }: DashboardProp
   const Navigation = () => <nav className="space-y-2">
     <button onClick={() => setView("users")} className={`flex w-full items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium transition ${view === "users" ? "bg-white/10 text-white" : "text-slate-300 hover:bg-white/5 hover:text-white"}`}><LayoutDashboard className={`h-4 w-4 ${view === "users" ? "text-[#55d7c6]" : ""}`} /> {data.serverId === "plex" ? "Shared users" : "User profiles"}</button>
     {data.isMaster && <button onClick={() => setView("instances")} className={`flex w-full items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium transition ${view === "instances" ? "bg-white/10 text-white" : "text-slate-300 hover:bg-white/5 hover:text-white"}`}><Boxes className={`h-4 w-4 ${view === "instances" ? "text-[#55d7c6]" : ""}`} /> HarborGate instances</button>}
+    {data.serverId !== "plex" && <button onClick={() => setView("transfer")} className={`flex w-full items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium transition ${view === "transfer" ? "bg-white/10 text-white" : "text-slate-300 hover:bg-white/5 hover:text-white"}`}><History className="h-4 w-4 text-[#55d7c6]" /> Transfer history & favorites</button>}
     {data.serverId !== "plex" && <button onClick={() => setHistoryOpen(true)} className="flex w-full items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium text-slate-300 transition hover:bg-white/5 hover:text-white"><History className="h-4 w-4" /> Expiration history</button>}
   </nav>;
 
@@ -178,7 +180,7 @@ export function Dashboard({ data, onRefresh, onMutate, onLogout }: DashboardProp
           </div>
         </header>
 
-        {view === "instances" ? <InstanceManager csrf={data.csrf} /> : <div className="mx-auto max-w-7xl px-4 py-7 sm:px-7 lg:px-10 lg:py-10">
+        {view === "instances" ? <InstanceManager csrf={data.csrf} /> : view === "transfer" ? <HistoryTransfer csrf={data.csrf} /> : <div className="mx-auto max-w-7xl px-4 py-7 sm:px-7 lg:px-10 lg:py-10">
           <section className="mb-8 flex flex-col justify-between gap-5 sm:flex-row sm:items-end">
             <div><p className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-[#0F9F8F]">{data.serverLabel} · People & access</p><h1 className="text-3xl font-semibold tracking-[-0.04em] sm:text-4xl">{data.serverId === "plex" ? "Shared users" : "User profiles"}</h1><p className="mt-2 text-sm text-slate-500">{data.serverId === "plex" ? "Grant library access in Plex Web, then return here to manage shared users." : `Manage who can access your ${data.serverLabel} media server.`}</p></div>
             {data.serverId === "plex" ? <Button onClick={openPlexInvite} className="h-11 rounded-xl bg-[#0F9F8F] px-5 font-semibold text-white shadow-lg shadow-teal-800/10 hover:bg-[#0b887b]"><ExternalLink className="mr-2 h-4 w-4" /> Invite Plex user</Button> : <Button onClick={() => { setSelectedUser(null); setDialogOpen(true); }} className="h-11 rounded-xl bg-[#0F9F8F] px-5 font-semibold text-white shadow-lg shadow-teal-800/10 hover:bg-[#0b887b]"><Plus className="mr-2 h-4 w-4" /> New profile</Button>}
