@@ -34,9 +34,22 @@ export function HistoryTransfer({ csrf }: { csrf: string }) {
   const planId = useRef<string | null>(null);
 
   async function request<T>(body: object): Promise<T> {
-    const response = await fetch("/api/transfers", { method: "POST", headers: { "Content-Type": "application/json", "X-HarborGate-CSRF": csrf }, body: JSON.stringify(body), cache: "no-store" });
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.statusMessage || data.message || "Transfer request failed");
+    const response = await fetch("/api/transfers", { method: "POST", headers: { Accept: "application/json", "Content-Type": "application/json", "X-HarborGate-CSRF": csrf }, body: JSON.stringify(body), cache: "no-store" });
+    const text = await response.text();
+    let data: unknown;
+    try {
+      data = JSON.parse(text);
+    } catch {
+      if ([502, 503, 504].includes(response.status)) {
+        throw new Error(`HarborGate’s gateway could not complete the transfer request (HTTP ${response.status}). The server may be unavailable or the request timed out. Try again; if it persists, check the hosting gateway’s timeout settings.`);
+      }
+      throw new Error(`HarborGate’s transfer API returned a non-JSON response (HTTP ${response.status}). Check that this instance is running the latest HarborGate backend and that /api/transfers reaches HarborGate rather than a proxy or sign-in page.`);
+    }
+    if (!data || typeof data !== "object" || Array.isArray(data)) throw new Error("HarborGate returned an invalid transfer response. Check that the current backend is deployed.");
+    if (!response.ok) {
+      const error = data as { statusMessage?: unknown; message?: unknown };
+      throw new Error(typeof error.statusMessage === "string" ? error.statusMessage : typeof error.message === "string" ? error.message : `Transfer request failed (HTTP ${response.status})`);
+    }
     return data as T;
   }
   useEffect(() => {
