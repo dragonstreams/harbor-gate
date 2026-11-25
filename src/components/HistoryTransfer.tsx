@@ -6,11 +6,12 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Progress } from "@/components/ui/progress";
+import { TransferCompletionReport } from "./TransferCompletionReport";
 
 type Login = { type: "emby" | "jellyfin"; url: string; username: string; password: string };
 type Preview = { id: string; sourceName: string; destinationName: string; sourceItems: number; matched: number; changes: number; unmatched: number; ambiguous: number; samples: { name: string; type: string; Played: boolean; IsFavorite: boolean }[] };
 type Result = { processed: number; total: number; transferred: number; failed: number; issues: string[]; done: boolean };
-type Job = { id: string; status: "previewing" | "ready" | "transferring" | "completed" | "failed" | "cancelled"; message: string; preview?: Preview; result?: Result; error?: string };
+type Job = { id: string; status: "previewing" | "ready" | "transferring" | "completed" | "failed" | "cancelled"; message: string; reportAvailable: boolean; preview?: Preview; result?: Result; error?: string };
 const emptyLogin: Login = { type: "emby", url: "", username: "", password: "" };
 
 function ServerFields({ side, login, setLogin, disabled }: { side: string; login: Login; setLogin: (value: Login) => void; disabled: boolean }) {
@@ -132,6 +133,7 @@ export function HistoryTransfer({ csrf }: { csrf: string }) {
       {result && <div className="space-y-3" role="status"><Progress value={result.total ? result.processed / result.total * 100 : 100} className="h-2 rounded-full" /><p className="flex items-center gap-2 text-sm font-medium">{result.done && <CheckCircle2 className="h-4 w-4 text-[#0F9F8F]" />}{result.processed} / {result.total} processed · {result.transferred} verified · {result.failed} failed or not fully preserved</p>{result.issues.length > 0 && <ul className="space-y-1 text-xs text-rose-600 dark:text-rose-300">{result.issues.map((issue, index) => <li key={index}>{issue}</li>)}</ul>}</div>}
       <div className="flex flex-wrap gap-3"><Button type="button" disabled={busy} variant="outline" onClick={startOver} className="rounded-xl">{result?.done ? "New transfer" : "Change accounts"}</Button>{!result?.done && <Button disabled={busy || !confirmed || !preview.changes || job?.status === "failed" || job?.status === "cancelled"} onClick={transfer} className="rounded-xl bg-[#0F9F8F] text-white hover:bg-[#0b887b]">{busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}{busy ? "Transferring in background…" : result ? "Resume transfer progress" : "Overwrite destination data"}</Button>}</div>
     </section>}
+    {job?.reportAvailable && <TransferCompletionReport key={job.id} csrf={csrf} jobId={job.id} />}
     {error && <p role="alert" className="rounded-2xl border border-rose-500/30 bg-rose-500/10 p-4 text-sm text-rose-700 dark:text-rose-300">{error}{jobId.current && " A lost progress response does not cancel the background job. Check / resume progress to see its latest state, or reset to cancel it."}</p>}
   </div>;
 }

@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto";
+import type { TransferReportPage } from "../../src/types/transfer-report";
 import { discardTransfer, prepareTransfer, runTransfer } from "./history-transfer";
 
 type Preview = Awaited<ReturnType<typeof prepareTransfer>>;
@@ -18,8 +19,15 @@ type Job = {
 const jobs = new Map<string, Job>();
 const lifetime = 30 * 60_000;
 
+function reportAvailable(job: Job) {
+  return job.status === "completed" || (job.status === "ready" && job.preview?.changes === 0);
+}
 function snapshot(job: Job) {
-  return { id: job.id, status: job.status, message: job.message, preview: job.preview, result: job.result, error: job.error };
+  return {
+    id: job.id, status: job.status, message: job.message, error: job.error, reportAvailable: reportAvailable(job),
+    preview: job.preview ? { ...job.preview, report: undefined } : undefined,
+    result: job.result ? { ...job.result, report: undefined } : undefined,
+  };
 }
 function remove(job: Job) {
   if (job.preview) discardTransfer(job.owner, job.preview.id);
@@ -77,6 +85,24 @@ export function startTransferPreview(owner: string, source: unknown, destination
 
 export function transferJobStatus(owner: string, id: string) {
   return snapshot(getJob(owner, id));
+}
+
+export function transferJobReport(owner: string, id: string, group: unknown, requestedPage: unknown): TransferReportPage {
+  const job = getJob(owner, id);
+  if (!reportAvailable(job) || !job.preview) throw new Error("The itemized report is available when the transfer finishes.");
+  if (!["transferred", "notTransferred", "unchanged"].includes(String(group)) || typeof requestedPage !== "number" || !Number.isSafeInteger(requestedPage) || requestedPage < 1) throw new Error("Invalid report page request");
+  const report = job.preview.report;
+  const notTransferred = (outcome: string) => ["failed", "unmatched", "ambiguous"].includes(outcome);
+  const counts = { transferred: 0, notTransferred: 0, unchanged: 0 };
+  for (const item of report) {
+    if (item.outcome === "transferred") counts.transferred++;
+    else if (item.outcome === "unchanged") counts.unchanged++;
+    else if (notTransferred(item.outcome)) counts.notTransferred++;
+  }
+  const filtered = report.filter((item) => group === "notTransferred" ? notTransferred(item.outcome) : item.outcome === group);
+  const pageSize = 50;
+  const page = Math.min(requestedPage, Math.max(1, Math.ceil(filtered.length / pageSize)));
+  return { items: filtered.slice((page - 1) * pageSize, page * pageSize), total: filtered.length, page, pageSize, counts };
 }
 
 export function startTransferJob(owner: string, id: string) {

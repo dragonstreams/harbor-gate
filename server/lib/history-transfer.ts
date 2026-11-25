@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto";
+import type { TransferReportItem } from "../../src/types/transfer-report";
 import { validatePublicServerUrl } from "./instance-security";
 import { normalizeMediaServerUrl } from "./media-server";
 
@@ -6,8 +7,8 @@ type Kind = "emby" | "jellyfin";
 type Connection = { type: Kind; url: string; token: string; userId: string; name: string };
 type UserData = { Played: boolean; IsFavorite: boolean; PlayCount: number; PlaybackPositionTicks: number; LastPlayedDate: string | null };
 type Item = { Id: string; Name: string; Type: string; ProductionYear?: number; SeriesName?: string; ParentIndexNumber?: number; IndexNumber?: number; ProviderIds?: Record<string, string>; UserData?: Partial<UserData> };
-type Pair = { source: Item; destination: Item; data: UserData };
-type Plan = { owner: string; expires: number; source: Connection; destination: Connection; pairs: Pair[]; processed: number; transferred: number; failed: number; issues: string[]; unmatched: number; ambiguous: number; running: boolean };
+type Pair = { source: Item; destination: Item; data: UserData; report: TransferReportItem };
+type Plan = { owner: string; expires: number; source: Connection; destination: Connection; pairs: Pair[]; report: TransferReportItem[]; processed: number; transferred: number; failed: number; issues: string[]; unmatched: number; ambiguous: number; running: boolean };
 const plans = new Map<string, Plan>();
 
 async function call<T>(connection: Pick<Connection, "type" | "url" | "token">, path: string, body?: unknown): Promise<T> {
@@ -171,29 +172,46 @@ export async function prepareTransfer(owner: string, sourceInput: unknown, desti
     return [...new Map(matches.map((item) => [item.Id, item])).values()];
   });
   const pairs: Pair[] = [];
+  const report: TransferReportItem[] = [];
   let unmatched = 0, ambiguous = 0;
   const used = new Set<string>();
   for (let index = 0; index < sourceItems.length; index++) {
     const sourceItem = sourceItems[index];
-    const matches = destinationMatches[index];
-    if (!matches.length) { unmatched++; continue; }
-    if (matches.length !== 1) { ambiguous++; continue; }
-    const destinationItem = matches[0];
-    if (used.has(destinationItem.Id) || conflictingIds(sourceItem, destinationItem)) { ambiguous++; continue; }
-    used.add(destinationItem.Id);
     const data = userData(sourceItem);
-    if (JSON.stringify(data) !== JSON.stringify(destinationItem.UserData ? userData(destinationItem) : {})) pairs.push({ source: sourceItem, destination: destinationItem, data });
+    const entry: TransferReportItem = { id: sourceItem.Id, name: sourceItem.Name, type: sourceItem.Type, seriesName: sourceItem.SeriesName, year: sourceItem.ProductionYear, season: sourceItem.ParentIndexNumber, episode: sourceItem.IndexNumber, data, outcome: "pending", reason: "Awaiting transfer" };
+    report.push(entry);
+    const matches = destinationMatches[index];
+    if (!matches.length) {
+      unmatched++; entry.outcome = "unmatched"; entry.reason = "No safe match found in the destination user's accessible media.";
+      continue;
+    }
+    if (matches.length !== 1) {
+      ambiguous++; entry.outcome = "ambiguous"; entry.reason = "Multiple destination items matched. Skipped to avoid updating the wrong item.";
+      continue;
+    }
+    const destinationItem = matches[0];
+    if (used.has(destinationItem.Id) || conflictingIds(sourceItem, destinationItem)) {
+      ambiguous++; entry.outcome = "ambiguous";
+      entry.reason = used.has(destinationItem.Id) ? "Another source item already matched this destination item." : "Source and destination metadata IDs conflict.";
+      continue;
+    }
+    used.add(destinationItem.Id);
+    if (JSON.stringify(data) !== JSON.stringify(destinationItem.UserData ? userData(destinationItem) : {})) {
+      pairs.push({ source: sourceItem, destination: destinationItem, data, report: entry });
+    } else {
+      entry.outcome = "unchanged"; entry.reason = "Destination user data already matches the source. No write was needed.";
+    }
   }
   // Update container favorites after leaf playback data so parent updates cannot undo episode history.
   pairs.sort((a, b) => Number(["Series", "Season", "MusicAlbum", "BoxSet"].includes(a.source.Type)) - Number(["Series", "Season", "MusicAlbum", "BoxSet"].includes(b.source.Type)));
   const id = randomBytes(24).toString("hex");
-  plans.set(id, { owner, expires: Date.now() + 30 * 60_000, source, destination, pairs, processed: 0, transferred: 0, failed: 0, issues: [], unmatched, ambiguous, running: false });
+  plans.set(id, { owner, expires: Date.now() + 30 * 60_000, source, destination, pairs, report, processed: 0, transferred: 0, failed: 0, issues: [], unmatched, ambiguous, running: false });
   const expiry = setInterval(() => {
     const plan = plans.get(id);
     if (!plan || (!plan.running && plan.expires < Date.now())) { plans.delete(id); clearInterval(expiry); }
   }, 60_000);
   expiry.unref();
-  return { id, sourceName: source.name, destinationName: destination.name, sourceItems: sourceItems.length, matched: used.size, changes: pairs.length, unmatched, ambiguous, samples: pairs.slice(0, 12).map((pair) => ({ name: pair.source.Name, type: pair.source.Type, ...pair.data })) };
+  return { id, sourceName: source.name, destinationName: destination.name, sourceItems: sourceItems.length, matched: used.size, changes: pairs.length, unmatched, ambiguous, report, samples: pairs.slice(0, 12).map((pair) => ({ name: pair.source.Name, type: pair.source.Type, ...pair.data })) };
 }
 export async function runTransfer(owner: string, id: string) {
   const plan = plans.get(id);
@@ -220,14 +238,19 @@ export async function runTransfer(owner: string, id: string) {
         if ((actual.LastPlayedDate ? Date.parse(actual.LastPlayedDate) : null) !== (pair.data.LastPlayedDate ? Date.parse(pair.data.LastPlayedDate) : null)) missing.push("last-played date");
         if (missing.length) throw new Error(`Destination did not preserve: ${missing.join(", ")}. Other fields may have been saved.`);
         plan.transferred++;
+        pair.report.outcome = "transferred";
+        pair.report.reason = "Watched status, favorites, play count, resume position, and last-played date saved and verified.";
       } catch (error) {
         plan.failed++;
-        if (plan.issues.length < 20) plan.issues.push(`${pair.source.Name}: ${error instanceof Error ? error.message : "Transfer failed"}`);
+        pair.report.outcome = "failed";
+        pair.report.reason = error instanceof Error ? error.message : "Transfer failed";
+        if (plan.issues.length < 20) plan.issues.push(`${pair.source.Name}: ${pair.report.reason}`);
       }
       plan.processed++;
     }));
     plan.expires = Date.now() + 30 * 60_000;
-    const result = { processed: plan.processed, total: plan.pairs.length, transferred: plan.transferred, failed: plan.failed, issues: plan.issues, done: plan.processed === plan.pairs.length };
+    const done = plan.processed === plan.pairs.length;
+    const result = { processed: plan.processed, total: plan.pairs.length, transferred: plan.transferred, failed: plan.failed, issues: plan.issues, done, report: done ? plan.report : undefined };
     if (result.done) plans.delete(id);
     return result;
   } finally { plan.running = false; }
