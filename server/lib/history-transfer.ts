@@ -49,19 +49,57 @@ async function connect(input: unknown): Promise<Connection> {
   return { type, url, token: result.AccessToken, userId: result.User.Id, name: result.User.Name };
 }
 
-async function items(connection: Connection, onProgress: (count: number) => void) {
+async function queryItems(connection: Connection, filters: Record<string, string>, onProgress: (count: number) => void) {
   const result: Item[] = [];
   for (let start = 0; ; ) {
-    const query = new URLSearchParams({ Recursive: "true", StartIndex: String(start), Limit: "500", Fields: "ProviderIds", EnableUserData: "true", EnableImages: "false", IncludeItemTypes: "Movie,Episode,Series,Season,Audio,MusicAlbum,MusicArtist,MusicVideo,Video,Book,BoxSet" });
-    const page = await call<{ Items: Item[]; TotalRecordCount: number }>(connection, `/Users/${encodeURIComponent(connection.userId)}/Items?${query}`);
-    if (!Array.isArray(page?.Items)) throw new Error("Server did not return a media library");
+    onProgress(start);
+    const query = new URLSearchParams({ Recursive: "true", StartIndex: String(start), Limit: "500", Fields: "ProviderIds", EnableUserData: "true", EnableImages: "false", EnableTotalRecordCount: "true", CollapseBoxSetItems: "false", IncludeItemTypes: "Movie,Episode,Series,Season,Audio,MusicAlbum,MusicArtist,MusicVideo,Video,Book,BoxSet", ...filters });
+    const page = await call<{ Items: Item[]; TotalRecordCount?: number }>(connection, `/Users/${encodeURIComponent(connection.userId)}/Items?${query}`);
+    if (!Array.isArray(page?.Items)) throw new Error("Server did not return matching media items");
     result.push(...page.Items);
     start += page.Items.length;
     onProgress(start);
-    if (!page.Items.length || start >= page.TotalRecordCount) break;
-    if (start > 100_000) throw new Error("Library exceeds the 100,000-item transfer limit");
+    if (start > 100_000) throw new Error("Filtered results exceed the 100,000-item transfer limit");
+    if (!page.Items.length || (page.TotalRecordCount !== undefined ? start >= page.TotalRecordCount : page.Items.length < 500)) break;
   }
   return result;
+}
+
+async function concurrent<T, U>(values: T[], action: (value: T, index: number) => Promise<U>): Promise<U[]> {
+  const results: U[] = new Array(values.length);
+  let next = 0;
+  await Promise.all(Array.from({ length: Math.min(3, values.length) }, async () => {
+    while (next < values.length) {
+      const index = next++;
+      results[index] = await action(values[index], index);
+    }
+  }));
+  return results;
+}
+
+function chooseMatches(source: Item, candidates: Item[]) {
+  const sourceIds = new Set(keys(source));
+  const idMatches = candidates.filter((item) => item.Type === source.Type && keys(item).some((key) => sourceIds.has(key)));
+  if (idMatches.length) return idMatches;
+  const fallback = new Set(fallbackKeys(source));
+  return candidates.filter((item) => item.Type === source.Type && !conflictingIds(source, item) && fallbackKeys(item).some((key) => fallback.has(key)));
+}
+
+async function findDestination(connection: Connection, source: Item, search: (filters: Record<string, string>) => Promise<Item[]>) {
+  if (connection.type === "emby" && keys(source).length) {
+    const providerIds = keys(source).map((key) => key.slice(key.indexOf(":") + 1).replace(":", "."));
+    const matches = chooseMatches(source, await search({ IncludeItemTypes: source.Type, AnyProviderIdEquals: providerIds.join(",") }));
+    if (matches.length) return matches;
+  }
+  // Jellyfin has no provider-ID equality query; search a narrow title/series scope, then verify IDs locally.
+  if (source.Type === "Episode" && source.SeriesName?.trim() && source.ParentIndexNumber !== undefined) {
+    const series = await search({ IncludeItemTypes: "Series", SearchTerm: source.SeriesName });
+    const episodes: Item[] = [];
+    for (const item of series) episodes.push(...await search({ IncludeItemTypes: "Episode", ParentId: item.Id, ParentIndexNumber: String(source.ParentIndexNumber) }));
+    return chooseMatches(source, episodes);
+  }
+  if (!source.Name?.trim()) return [];
+  return chooseMatches(source, await search({ IncludeItemTypes: source.Type, SearchTerm: source.Name }));
 }
 
 function keys(item: Item) {
@@ -100,35 +138,47 @@ export async function prepareTransfer(owner: string, sourceInput: unknown, desti
   onProgress("Connecting to destination server…");
   const destination = await stage("Destination login", () => connect(destinationInput));
   if (source.url === destination.url && source.userId === destination.userId) throw new Error("Source and destination must not be the same user on the same server");
-  let sourceCount = 0, destinationCount = 0;
-  const progress = () => onProgress(`Reading libraries: ${sourceCount} source items · ${destinationCount} destination items`);
-  progress();
-  const [sourceItems, destinationItems] = await Promise.all([
-    stage("Read source library", () => items(source, (count) => { sourceCount = count; progress(); })),
-    stage("Read destination library", () => items(destination, (count) => { destinationCount = count; progress(); })),
-  ]);
-  onProgress("Matching media between servers…");
-  const index = new Map<string, Item[]>();
-  const fallbackIndex = new Map<string, Item[]>();
-  for (const item of destinationItems) {
-    for (const key of keys(item)) index.set(key, [...(index.get(key) ?? []), item]);
-    for (const key of fallbackKeys(item)) fallbackIndex.set(key, [...(fallbackIndex.get(key) ?? []), item]);
+  const sourceCounts = [0, 0, 0];
+  const activityFilters = [{ IsPlayed: "true" }, { IsFavorite: "true" }, { Filters: "IsResumable" }];
+  const activityResults = await concurrent(activityFilters, (filters, index) => stage("Read source user activity", () => queryItems(source, filters, (count) => {
+    sourceCounts[index] = count;
+    onProgress(`Reading user activity: ${sourceCounts[0]} watched · ${sourceCounts[1]} favorites · ${sourceCounts[2]} resumable (duplicates removed next)`);
+  })));
+  const activeItems = new Map<string, Item>();
+  for (const item of activityResults.flat()) {
+    const data = item.UserData;
+    if (data && (data.Played || data.IsFavorite || (data.PlaybackPositionTicks ?? 0) > 0 || (data.PlayCount ?? 0) > 0 || data.LastPlayedDate)) activeItems.set(item.Id, item);
   }
+  const sourceItems = [...activeItems.values()];
+  let checked = 0;
+  const progress = () => onProgress(`Looking up active items on destination: ${checked} / ${sourceItems.length}`);
+  progress();
+  const searchCache = new Map<string, Promise<Item[]>>();
+  const search = (filters: Record<string, string>) => {
+    const key = new URLSearchParams(filters).toString();
+    let result = searchCache.get(key);
+    if (!result) {
+      result = queryItems(destination, filters, progress);
+      searchCache.set(key, result);
+    }
+    return result;
+  };
+  const destinationMatches = await concurrent(sourceItems, async (sourceItem) => {
+    progress();
+    const matches = await stage(`Look up destination item ${sourceItem.Name}`, () => findDestination(destination, sourceItem, search));
+    checked++;
+    progress();
+    return [...new Map(matches.map((item) => [item.Id, item])).values()];
+  });
   const pairs: Pair[] = [];
   let unmatched = 0, ambiguous = 0;
   const used = new Set<string>();
-  for (const sourceItem of sourceItems) {
-    if (!sourceItem.UserData) { unmatched++; continue; }
-    const matches = new Map<string, Item>();
-    for (const key of keys(sourceItem)) for (const item of index.get(key) ?? []) matches.set(item.Id, item);
-    if (!matches.size) {
-      for (const key of fallbackKeys(sourceItem)) for (const item of fallbackIndex.get(key) ?? []) {
-        if (!conflictingIds(sourceItem, item)) matches.set(item.Id, item);
-      }
-    }
-    if (!matches.size) { unmatched++; continue; }
-    if (matches.size !== 1) { ambiguous++; continue; }
-    const destinationItem = [...matches.values()][0];
+  for (let index = 0; index < sourceItems.length; index++) {
+    const sourceItem = sourceItems[index];
+    const matches = destinationMatches[index];
+    if (!matches.length) { unmatched++; continue; }
+    if (matches.length !== 1) { ambiguous++; continue; }
+    const destinationItem = matches[0];
     if (used.has(destinationItem.Id) || conflictingIds(sourceItem, destinationItem)) { ambiguous++; continue; }
     used.add(destinationItem.Id);
     const data = userData(sourceItem);
@@ -151,9 +201,9 @@ export async function runTransfer(owner: string, id: string) {
   if (plan.running) throw new Error("A transfer batch is already running");
   plan.running = true;
   try {
-    // Keep each request to one write/read pair instead of up to ten slow API calls.
-    const batch = plan.pairs.slice(plan.processed, plan.processed + 1);
-    for (const pair of batch) {
+    const container = (pair: Pair) => ["Series", "Season", "MusicAlbum", "BoxSet"].includes(pair.source.Type);
+    const batch = plan.pairs.slice(plan.processed, plan.processed + 3).filter((pair) => container(pair) === container(plan.pairs[plan.processed]));
+    await Promise.all(batch.map(async (pair) => {
       try {
         const userId = encodeURIComponent(plan.destination.userId);
         const itemId = encodeURIComponent(pair.destination.Id);
@@ -175,7 +225,7 @@ export async function runTransfer(owner: string, id: string) {
         if (plan.issues.length < 20) plan.issues.push(`${pair.source.Name}: ${error instanceof Error ? error.message : "Transfer failed"}`);
       }
       plan.processed++;
-    }
+    }));
     plan.expires = Date.now() + 30 * 60_000;
     const result = { processed: plan.processed, total: plan.pairs.length, transferred: plan.transferred, failed: plan.failed, issues: plan.issues, done: plan.processed === plan.pairs.length };
     if (result.done) plans.delete(id);
