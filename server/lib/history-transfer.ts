@@ -13,15 +13,30 @@ const plans = new Map<string, Plan>();
 async function call<T>(connection: Pick<Connection, "type" | "url" | "token">, path: string, body?: unknown): Promise<T> {
   await validatePublicServerUrl(connection.url);
   const auth = 'MediaBrowser Client="HarborGate Transfer", Device="History Transfer", DeviceId="harborgate-transfer", Version="1.0"';
-  const response = await fetch(`${connection.url}${path}`, {
-    method: body === undefined ? "GET" : "POST", redirect: "error", signal: AbortSignal.timeout(20_000),
-    headers: { Accept: "application/json", "Content-Type": "application/json", ...(connection.type === "emby" ? { "X-Emby-Authorization": auth, "X-Emby-Token": connection.token } : { Authorization: `${auth}, Token="${connection.token}"` }) },
-    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-  });
-  if (!response.ok) throw new Error(`Media server request failed (${response.status})`);
-  const text = await response.text();
-  if (!text.trim()) return undefined as T;
-  try { return JSON.parse(text) as T; } catch { throw new Error("Media server returned an invalid JSON response"); }
+  let response: Response;
+  try {
+    response = await fetch(`${connection.url}${path}`, {
+      method: body === undefined ? "GET" : "POST", redirect: "error", signal: AbortSignal.timeout(20_000),
+      headers: { Accept: "application/json", "Content-Type": "application/json", ...(connection.type === "emby" ? { "X-Emby-Authorization": auth, "X-Emby-Token": connection.token } : { Authorization: `${auth}, Token="${connection.token}"` }) },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    });
+  } catch (error) {
+    throw new Error(error instanceof Error && error.name === "TimeoutError"
+      ? "Media server did not respond within 20 seconds"
+      : "Cannot reach the media server. Check its HTTPS API address, TLS certificate, and whether a proxy redirects requests.");
+  }
+  if (!response.ok) {
+    const detail = response.status === 401 ? "Login rejected or session expired. Use the user's local server credentials, not an Emby Connect login."
+      : response.status === 403 ? "This user is not permitted to access or update this data."
+      : response.status === 404 || response.status === 405 ? "API route unavailable. Check the server type, base URL, and version."
+      : [502, 503, 504].includes(response.status) ? "The media-server gateway is unavailable or timed out." : "Media server rejected the request.";
+    throw new Error(`HTTP ${response.status}: ${detail}`);
+  }
+  const text = (await response.text()).trim();
+  if (!text) return undefined as T;
+  // Some Emby proxies return a boolean acknowledgement for successful writes.
+  if (body !== undefined && !path.includes("AuthenticateByName") && /^\??(?:true|null)$/i.test(text)) return undefined as T;
+  try { return JSON.parse(text) as T; } catch { throw new Error("Media server returned non-JSON data. Enter its API base URL, not its web dashboard or a proxy sign-in page."); }
 }
 
 async function connect(input: unknown): Promise<Connection> {
@@ -49,26 +64,49 @@ async function items(connection: Connection) {
 }
 
 function keys(item: Item) {
-  const ids = Object.entries(item.ProviderIds ?? {}).filter(([key, value]) => value && ["imdb", "tmdb", "tvdb", "musicbrainztrack", "musicbrainzalbum", "musicbrainzartist"].includes(key.toLowerCase()));
-  if (ids.length) return ids.map(([key, value]) => `${item.Type}:${key.toLowerCase()}:${value.toLowerCase()}`);
+  return Object.entries(item.ProviderIds ?? {})
+    .filter(([key, value]) => value && ["imdb", "tmdb", "tvdb", "musicbrainztrack", "musicbrainzalbum", "musicbrainzartist"].includes(key.toLowerCase()))
+    .map(([key, value]) => `${item.Type}:${key.toLowerCase()}:${value.trim().toLowerCase()}`);
+}
+function fallbackKeys(item: Item) {
   const name = (value: string) => value.trim().toLowerCase().replace(/\s+/g, " ");
   if (item.Type === "Episode" && item.SeriesName && item.ParentIndexNumber !== undefined && item.IndexNumber !== undefined) return [`episode:${name(item.SeriesName)}:${item.ParentIndexNumber}:${item.IndexNumber}`];
-  if (item.Type === "Movie" && item.ProductionYear) return [`movie:${name(item.Name)}:${item.ProductionYear}`];
+  if (["Movie", "Series"].includes(item.Type) && item.ProductionYear) return [`${item.Type}:${name(item.Name)}:${item.ProductionYear}`];
   return [];
+}
+function conflictingIds(source: Item, destination: Item) {
+  const destinationIds = new Map(Object.entries(destination.ProviderIds ?? {}).map(([key, value]) => [key.toLowerCase(), value.trim().toLowerCase()]));
+  return Object.entries(source.ProviderIds ?? {}).some(([key, value]) => value && destinationIds.has(key.toLowerCase()) && destinationIds.get(key.toLowerCase()) !== value.trim().toLowerCase());
 }
 function userData(item: Item): UserData {
   const data = item.UserData!;
   return { Played: Boolean(data.Played), IsFavorite: Boolean(data.IsFavorite), PlayCount: data.PlayCount ?? 0, PlaybackPositionTicks: data.PlaybackPositionTicks ?? 0, LastPlayedDate: data.LastPlayedDate ?? null };
 }
+async function stage<T>(label: string, action: () => Promise<T>): Promise<T> {
+  try { return await action(); } catch (error) {
+    const failure = error as { code?: string };
+    const message = failure?.code === "ENOTFOUND" || failure?.code === "EAI_AGAIN"
+      ? "Cannot resolve the media server's hostname. Check the URL and server DNS."
+      : error instanceof Error ? error.message : "Media server request failed";
+    throw new Error(`${label}: ${message}`);
+  }
+}
 export async function prepareTransfer(owner: string, sourceInput: unknown, destinationInput: unknown) {
   for (const [id, plan] of plans) if (plan.expires < Date.now() || (plan.owner === owner && !plan.running)) plans.delete(id);
   if (plans.size >= 20) throw new Error("Transfer capacity reached. Try again later.");
-  const source = await connect(sourceInput);
-  const destination = await connect(destinationInput);
+  const source = await stage("Source login", () => connect(sourceInput));
+  const destination = await stage("Destination login", () => connect(destinationInput));
   if (source.url === destination.url && source.userId === destination.userId) throw new Error("Source and destination must not be the same user on the same server");
-  const [sourceItems, destinationItems] = await Promise.all([items(source), items(destination)]);
+  const [sourceItems, destinationItems] = await Promise.all([
+    stage("Read source library", () => items(source)),
+    stage("Read destination library", () => items(destination)),
+  ]);
   const index = new Map<string, Item[]>();
-  for (const item of destinationItems) for (const key of keys(item)) index.set(key, [...(index.get(key) ?? []), item]);
+  const fallbackIndex = new Map<string, Item[]>();
+  for (const item of destinationItems) {
+    for (const key of keys(item)) index.set(key, [...(index.get(key) ?? []), item]);
+    for (const key of fallbackKeys(item)) fallbackIndex.set(key, [...(fallbackIndex.get(key) ?? []), item]);
+  }
   const pairs: Pair[] = [];
   let unmatched = 0, ambiguous = 0;
   const used = new Set<string>();
@@ -76,10 +114,15 @@ export async function prepareTransfer(owner: string, sourceInput: unknown, desti
     if (!sourceItem.UserData) { unmatched++; continue; }
     const matches = new Map<string, Item>();
     for (const key of keys(sourceItem)) for (const item of index.get(key) ?? []) matches.set(item.Id, item);
+    if (!matches.size) {
+      for (const key of fallbackKeys(sourceItem)) for (const item of fallbackIndex.get(key) ?? []) {
+        if (!conflictingIds(sourceItem, item)) matches.set(item.Id, item);
+      }
+    }
     if (!matches.size) { unmatched++; continue; }
     if (matches.size !== 1) { ambiguous++; continue; }
     const destinationItem = [...matches.values()][0];
-    if (used.has(destinationItem.Id)) { ambiguous++; continue; }
+    if (used.has(destinationItem.Id) || conflictingIds(sourceItem, destinationItem)) { ambiguous++; continue; }
     used.add(destinationItem.Id);
     const data = userData(sourceItem);
     if (JSON.stringify(data) !== JSON.stringify(destinationItem.UserData ? userData(destinationItem) : {})) pairs.push({ source: sourceItem, destination: destinationItem, data });
@@ -101,16 +144,24 @@ export async function runTransfer(owner: string, id: string) {
   if (plan.running) throw new Error("A transfer batch is already running");
   plan.running = true;
   try {
-    const batch = plan.pairs.slice(plan.processed, plan.processed + 5);
+    // Keep each request to one write/read pair instead of up to ten slow API calls.
+    const batch = plan.pairs.slice(plan.processed, plan.processed + 1);
     for (const pair of batch) {
       try {
         const userId = encodeURIComponent(plan.destination.userId);
         const itemId = encodeURIComponent(pair.destination.Id);
         const path = plan.destination.type === "jellyfin" ? `/UserItems/${itemId}/UserData?userId=${userId}` : `/Users/${userId}/Items/${itemId}/UserData`;
-        await call(plan.destination, path, pair.data);
-        const saved = await call<Item>(plan.destination, `/Users/${userId}/Items/${itemId}`);
-        const actual = saved.UserData;
-        if (!actual || actual.Played !== pair.data.Played || actual.IsFavorite !== pair.data.IsFavorite || (actual.PlayCount ?? 0) !== pair.data.PlayCount || (actual.PlaybackPositionTicks ?? 0) !== pair.data.PlaybackPositionTicks || (actual.LastPlayedDate ? Date.parse(actual.LastPlayedDate) : null) !== (pair.data.LastPlayedDate ? Date.parse(pair.data.LastPlayedDate) : null)) throw new Error("Server did not preserve all requested user-data fields");
+        await stage("Save destination data", () => call(plan.destination, path, pair.data));
+        const saved = await stage("Verify destination data", () => call<Item>(plan.destination, `/Users/${userId}/Items/${itemId}`));
+        const actual = saved?.UserData;
+        if (!actual) throw new Error("Verify destination data: server did not return user data");
+        const missing: string[] = [];
+        if (Boolean(actual.Played) !== pair.data.Played) missing.push("watched status");
+        if (Boolean(actual.IsFavorite) !== pair.data.IsFavorite) missing.push("favorite status");
+        if ((actual.PlayCount ?? 0) !== pair.data.PlayCount) missing.push("play count");
+        if ((actual.PlaybackPositionTicks ?? 0) !== pair.data.PlaybackPositionTicks) missing.push("resume position");
+        if ((actual.LastPlayedDate ? Date.parse(actual.LastPlayedDate) : null) !== (pair.data.LastPlayedDate ? Date.parse(pair.data.LastPlayedDate) : null)) missing.push("last-played date");
+        if (missing.length) throw new Error(`Destination did not preserve: ${missing.join(", ")}. Other fields may have been saved.`);
         plan.transferred++;
       } catch (error) {
         plan.failed++;
