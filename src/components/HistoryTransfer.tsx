@@ -10,6 +10,7 @@ import { Progress } from "@/components/ui/progress";
 type Login = { type: "emby" | "jellyfin"; url: string; username: string; password: string };
 type Preview = { id: string; sourceName: string; destinationName: string; sourceItems: number; matched: number; changes: number; unmatched: number; ambiguous: number; samples: { name: string; type: string; Played: boolean; IsFavorite: boolean }[] };
 type Result = { processed: number; total: number; transferred: number; failed: number; issues: string[]; done: boolean };
+type Job = { id: string; status: "previewing" | "ready" | "transferring" | "completed" | "failed" | "cancelled"; message: string; preview?: Preview; result?: Result; error?: string };
 const emptyLogin: Login = { type: "emby", url: "", username: "", password: "" };
 
 function ServerFields({ side, login, setLogin, disabled }: { side: string; login: Login; setLogin: (value: Login) => void; disabled: boolean }) {
@@ -30,11 +31,13 @@ export function HistoryTransfer({ csrf }: { csrf: string }) {
   const [busy, setBusy] = useState(false);
   const [confirmed, setConfirmed] = useState(false);
   const [error, setError] = useState("");
+  const [job, setJob] = useState<Job | null>(null);
   const active = useRef(true);
-  const planId = useRef<string | null>(null);
+  const jobId = useRef<string | null>(null);
+  const generation = useRef(0);
 
   async function request<T>(body: object): Promise<T> {
-    const response = await fetch("/api/transfers", { method: "POST", headers: { Accept: "application/json", "Content-Type": "application/json", "X-HarborGate-CSRF": csrf }, body: JSON.stringify(body), cache: "no-store" });
+    const response = await fetch("/api/transfers", { method: "POST", headers: { Accept: "application/json", "Content-Type": "application/json", "X-HarborGate-CSRF": csrf }, body: JSON.stringify(body), cache: "no-store", signal: AbortSignal.timeout(15_000) });
     const text = await response.text();
     let data: unknown;
     try {
@@ -54,42 +57,72 @@ export function HistoryTransfer({ csrf }: { csrf: string }) {
   }
   useEffect(() => {
     active.current = true;
-    return () => { active.current = false; if (planId.current) void request({ operation: "discard", id: planId.current }).catch(() => undefined); };
+    return () => {
+      active.current = false;
+      generation.current++;
+      if (jobId.current) void request({ operation: "discard", id: jobId.current }).catch(() => undefined);
+    };
   }, [csrf]);
 
+  async function monitor(initial: Job, currentGeneration: number) {
+    let current = initial;
+    while (active.current && generation.current === currentGeneration && jobId.current === current.id) {
+      setJob(current);
+      if (current.preview) setPreview(current.preview);
+      if (current.result) setResult(current.result);
+      if (current.status === "failed") throw new Error(current.error || "Transfer stopped");
+      if (["ready", "completed", "cancelled"].includes(current.status)) return;
+      await new Promise<void>((resolve) => setTimeout(resolve, 1000));
+      if (!active.current || generation.current !== currentGeneration) return;
+      current = await request<Job>({ operation: "status", id: current.id });
+    }
+  }
   async function prepare(event: FormEvent) {
     event.preventDefault();
-    setBusy(true); setError(""); setResult(null); setConfirmed(false);
+    const currentGeneration = ++generation.current;
+    setBusy(true); setError(""); setResult(null); setConfirmed(false); setJob(null);
     try {
-      const data = await request<Preview>({ operation: "preview", source, destination });
-      if (!active.current) { void request({ operation: "discard", id: data.id }); return; }
-      planId.current = data.id; setPreview(data);
+      const data = await request<Job>({ operation: "preview", source, destination });
+      if (!active.current || generation.current !== currentGeneration) {
+        void request({ operation: "discard", id: data.id }).catch(() => undefined);
+        return;
+      }
+      jobId.current = data.id;
       setSource((current) => ({ ...current, password: "" })); setDestination((current) => ({ ...current, password: "" }));
-    } catch (reason) { if (active.current) setError(reason instanceof Error ? reason.message : "Unable to preview transfer"); }
-    finally { if (active.current) setBusy(false); }
+      await monitor(data, currentGeneration);
+    } catch (reason) { if (active.current && generation.current === currentGeneration) setError(reason instanceof Error ? reason.message : "Unable to preview transfer"); }
+    finally { if (active.current && generation.current === currentGeneration) setBusy(false); }
+  }
+  async function resumeStatus() {
+    if (!jobId.current) return;
+    const currentGeneration = ++generation.current;
+    setBusy(true); setError("");
+    try { await monitor(await request<Job>({ operation: "status", id: jobId.current }), currentGeneration); }
+    catch (reason) { if (active.current && generation.current === currentGeneration) setError(reason instanceof Error ? reason.message : "Unable to check transfer status"); }
+    finally { if (active.current && generation.current === currentGeneration) setBusy(false); }
   }
   async function transfer() {
-    if (!preview || !confirmed) return;
+    if (!preview || !confirmed || !jobId.current) return;
+    const currentGeneration = ++generation.current;
     setBusy(true); setError("");
-    try {
-      while (active.current) {
-        const data = await request<Result>({ operation: "run", id: preview.id });
-        if (!active.current) break;
-        setResult(data);
-        if (data.done) { planId.current = null; break; }
-      }
-    } catch (reason) { if (active.current) setError(reason instanceof Error ? reason.message : "Transfer interrupted"); }
-    finally { if (active.current) setBusy(false); }
+    try { await monitor(await request<Job>({ operation: "run", id: jobId.current }), currentGeneration); }
+    catch (reason) { if (active.current && generation.current === currentGeneration) setError(reason instanceof Error ? reason.message : "Transfer interrupted"); }
+    finally { if (active.current && generation.current === currentGeneration) setBusy(false); }
   }
-  function startOver() {
-    if (planId.current) void request({ operation: "discard", id: planId.current }).catch(() => undefined);
-    planId.current = null; setPreview(null); setResult(null); setConfirmed(false); setError("");
+  async function startOver() {
+    if (jobId.current) {
+      try { await request({ operation: "discard", id: jobId.current }); }
+      catch (reason) { setError(reason instanceof Error ? reason.message : "Unable to cancel transfer"); return; }
+    }
+    generation.current++;
+    jobId.current = null; setJob(null); setBusy(false); setPreview(null); setResult(null); setConfirmed(false); setError("");
   }
 
   return <div className="mx-auto max-w-6xl space-y-7 px-4 py-8 sm:px-7 lg:px-10">
     <div className="flex items-center gap-4"><div className="rounded-3xl bg-secondary p-4 text-secondary-foreground"><ArrowRightLeft className="h-7 w-7" /></div><div><p className="text-xs font-semibold uppercase tracking-widest text-[#0F9F8F]">Emby · Jellyfin</p><h1 className="mt-1 text-3xl font-semibold tracking-tight">Transfer history & favorites</h1><p className="mt-2 text-sm text-muted-foreground">Bring watched status, favorites, play counts, last-played dates, and resume positions to another account.</p></div></div>
     <div className="flex gap-3 rounded-2xl border border-border bg-secondary/50 p-4 text-sm"><ShieldCheck className="h-5 w-5 shrink-0 text-[#0F9F8F]" /><p>Use each user’s own login. Public HTTPS servers only. Passwords are not saved; temporary tokens stay on HarborGate’s server. Only matching media changes; the source is never modified.</p></div>
-    {!preview ? <form onSubmit={prepare} className="space-y-6"><div className="grid gap-5 md:grid-cols-2"><ServerFields side="Source" login={source} setLogin={setSource} disabled={busy} /><ServerFields side="Destination" login={destination} setLogin={setDestination} disabled={busy} /></div><Button disabled={busy} className="h-12 rounded-xl bg-[#0F9F8F] px-7 font-semibold text-white hover:bg-[#0b887b]">{busy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Film className="mr-2 h-4 w-4" />}{busy ? "Connecting & matching libraries…" : "Preview transfer"}</Button></form> : <section className="space-y-6 rounded-3xl border border-border bg-card p-6 sm:p-8">
+    {job && <div className="space-y-3 rounded-2xl border border-border bg-card p-4"><p role="status" className="flex items-center gap-2 text-sm font-medium">{busy && <Loader2 className="h-4 w-4 animate-spin text-[#0F9F8F]" />}{job.message}</p><p className="text-xs text-muted-foreground">Work runs in the background; progress requests return immediately. Leaving this screen requests cancellation. Already saved changes are not rolled back.</p><div className="flex flex-wrap gap-3">{!busy && !["completed", "failed", "cancelled"].includes(job.status) && <Button type="button" variant="outline" onClick={resumeStatus} className="rounded-xl">Check / resume progress</Button>}<Button type="button" variant="outline" onClick={startOver} className="rounded-xl">{job.status === "transferring" ? "Stop and reset" : "Reset preview"}</Button></div></div>}
+    {!preview ? <form onSubmit={prepare} className="space-y-6"><div className="grid gap-5 md:grid-cols-2"><ServerFields side="Source" login={source} setLogin={setSource} disabled={busy || !!jobId.current} /><ServerFields side="Destination" login={destination} setLogin={setDestination} disabled={busy || !!jobId.current} /></div><Button disabled={busy || !!jobId.current} className="h-12 rounded-xl bg-[#0F9F8F] px-7 font-semibold text-white hover:bg-[#0b887b]">{busy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Film className="mr-2 h-4 w-4" />}{busy ? "Preparing preview in background…" : "Preview transfer"}</Button></form> : <section className="space-y-6 rounded-3xl border border-border bg-card p-6 sm:p-8">
       <h2 className="text-xl font-semibold">{preview.sourceName} <ArrowRight className="mx-2 inline h-4 w-4" /> {preview.destinationName}</h2>
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">{[{ label: "Matching items", value: preview.matched }, { label: "Items to overwrite", value: preview.changes }, { label: "No safe match", value: preview.unmatched }, { label: "Ambiguous (skipped)", value: preview.ambiguous }].map((stat) => <div key={stat.label} className="rounded-2xl bg-muted p-4"><p className="text-2xl font-semibold">{stat.value}</p><p className="mt-1 text-xs text-muted-foreground">{stat.label}</p></div>)}</div>
       <p className="text-xs leading-5 text-muted-foreground">Matches prefer shared metadata IDs, then movie/series title and year or episode series/season/number if there is no ID match. Conflicting IDs and duplicate matches are skipped. Media files and detailed playback-session logs are not copied.</p>
@@ -97,8 +130,8 @@ export function HistoryTransfer({ csrf }: { csrf: string }) {
       {preview.samples.length > 0 && <div className="divide-y divide-border rounded-2xl border border-border">{preview.samples.map((sample, index) => <div key={index} className="flex items-center justify-between gap-3 px-4 py-3 text-sm"><span>{sample.name}<span className="ml-2 text-xs text-muted-foreground">{sample.type}</span></span><span className="flex items-center gap-2 text-xs text-muted-foreground">{sample.Played ? "Watched" : "Unwatched"}{sample.IsFavorite && <Heart className="h-4 w-4 fill-rose-400 text-rose-400" />}</span></div>)}</div>}
       {!result?.done && <label className="flex items-start gap-3 rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm"><Checkbox disabled={busy} checked={confirmed} onCheckedChange={(value) => setConfirmed(value === true)} className="mt-0.5 rounded" /><span>I understand matching destination data will be overwritten, including clearing favorites, watched status, and progress where the source has none. Unmatched destination items are left untouched.</span></label>}
       {result && <div className="space-y-3" role="status"><Progress value={result.total ? result.processed / result.total * 100 : 100} className="h-2 rounded-full" /><p className="flex items-center gap-2 text-sm font-medium">{result.done && <CheckCircle2 className="h-4 w-4 text-[#0F9F8F]" />}{result.processed} / {result.total} processed · {result.transferred} verified · {result.failed} failed or not fully preserved</p>{result.issues.length > 0 && <ul className="space-y-1 text-xs text-rose-600 dark:text-rose-300">{result.issues.map((issue, index) => <li key={index}>{issue}</li>)}</ul>}</div>}
-      <div className="flex flex-wrap gap-3"><Button type="button" disabled={busy} variant="outline" onClick={startOver} className="rounded-xl">{result?.done ? "New transfer" : "Change accounts"}</Button>{!result?.done && <Button disabled={busy || !confirmed || !preview.changes} onClick={transfer} className="rounded-xl bg-[#0F9F8F] text-white hover:bg-[#0b887b]">{busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}{busy ? "Transferring… Keep this page open" : result ? "Resume transfer" : "Overwrite destination data"}</Button>}</div>
+      <div className="flex flex-wrap gap-3"><Button type="button" disabled={busy} variant="outline" onClick={startOver} className="rounded-xl">{result?.done ? "New transfer" : "Change accounts"}</Button>{!result?.done && <Button disabled={busy || !confirmed || !preview.changes || job?.status === "failed" || job?.status === "cancelled"} onClick={transfer} className="rounded-xl bg-[#0F9F8F] text-white hover:bg-[#0b887b]">{busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}{busy ? "Transferring in background…" : result ? "Resume transfer progress" : "Overwrite destination data"}</Button>}</div>
     </section>}
-    {error && <p role="alert" className="rounded-2xl border border-rose-500/30 bg-rose-500/10 p-4 text-sm text-rose-700 dark:text-rose-300">{error}</p>}
+    {error && <p role="alert" className="rounded-2xl border border-rose-500/30 bg-rose-500/10 p-4 text-sm text-rose-700 dark:text-rose-300">{error}{jobId.current && " A lost progress response does not cancel the background job. Check / resume progress to see its latest state, or reset to cancel it."}</p>}
   </div>;
 }

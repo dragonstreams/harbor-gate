@@ -49,7 +49,7 @@ async function connect(input: unknown): Promise<Connection> {
   return { type, url, token: result.AccessToken, userId: result.User.Id, name: result.User.Name };
 }
 
-async function items(connection: Connection) {
+async function items(connection: Connection, onProgress: (count: number) => void) {
   const result: Item[] = [];
   for (let start = 0; ; ) {
     const query = new URLSearchParams({ Recursive: "true", StartIndex: String(start), Limit: "500", Fields: "ProviderIds", EnableUserData: "true", EnableImages: "false", IncludeItemTypes: "Movie,Episode,Series,Season,Audio,MusicAlbum,MusicArtist,MusicVideo,Video,Book,BoxSet" });
@@ -57,6 +57,7 @@ async function items(connection: Connection) {
     if (!Array.isArray(page?.Items)) throw new Error("Server did not return a media library");
     result.push(...page.Items);
     start += page.Items.length;
+    onProgress(start);
     if (!page.Items.length || start >= page.TotalRecordCount) break;
     if (start > 100_000) throw new Error("Library exceeds the 100,000-item transfer limit");
   }
@@ -91,16 +92,22 @@ async function stage<T>(label: string, action: () => Promise<T>): Promise<T> {
     throw new Error(`${label}: ${message}`);
   }
 }
-export async function prepareTransfer(owner: string, sourceInput: unknown, destinationInput: unknown) {
+export async function prepareTransfer(owner: string, sourceInput: unknown, destinationInput: unknown, onProgress: (message: string) => void) {
   for (const [id, plan] of plans) if (plan.expires < Date.now() || (plan.owner === owner && !plan.running)) plans.delete(id);
   if (plans.size >= 20) throw new Error("Transfer capacity reached. Try again later.");
+  onProgress("Connecting to source server…");
   const source = await stage("Source login", () => connect(sourceInput));
+  onProgress("Connecting to destination server…");
   const destination = await stage("Destination login", () => connect(destinationInput));
   if (source.url === destination.url && source.userId === destination.userId) throw new Error("Source and destination must not be the same user on the same server");
+  let sourceCount = 0, destinationCount = 0;
+  const progress = () => onProgress(`Reading libraries: ${sourceCount} source items · ${destinationCount} destination items`);
+  progress();
   const [sourceItems, destinationItems] = await Promise.all([
-    stage("Read source library", () => items(source)),
-    stage("Read destination library", () => items(destination)),
+    stage("Read source library", () => items(source, (count) => { sourceCount = count; progress(); })),
+    stage("Read destination library", () => items(destination, (count) => { destinationCount = count; progress(); })),
   ]);
+  onProgress("Matching media between servers…");
   const index = new Map<string, Item[]>();
   const fallbackIndex = new Map<string, Item[]>();
   for (const item of destinationItems) {

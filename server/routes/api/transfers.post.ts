@@ -1,6 +1,6 @@
 import { defineHandler } from "nitro";
 import { readBody, setResponseHeader, setResponseStatus } from "nitro/h3";
-import { discardTransfer, prepareTransfer, runTransfer } from "../../lib/history-transfer";
+import { cancelTransferJob, startTransferJob, startTransferPreview, transferJobStatus } from "../../lib/transfer-jobs";
 import { requireSession } from "../../lib/session";
 
 export default defineHandler(async (event) => {
@@ -9,10 +9,15 @@ export default defineHandler(async (event) => {
   try {
     const session = requireSession(event, true);
     const body = await readBody<{ operation?: string; source?: unknown; destination?: unknown; id?: string }>(event);
-    if (body?.operation === "preview") return await prepareTransfer(session.csrf, body.source, body.destination);
+    if (body?.operation === "preview") {
+      const job = startTransferPreview(session.csrf, body.source, body.destination);
+      setResponseStatus(event, 202);
+      return job;
+    }
     if (typeof body?.id === "string" && /^[a-f0-9]{48}$/.test(body.id)) {
-      if (body.operation === "run") return await runTransfer(session.csrf, body.id);
-      if (body.operation === "discard") { discardTransfer(session.csrf, body.id); return { ok: true }; }
+      if (body.operation === "status") return transferJobStatus(session.csrf, body.id);
+      if (body.operation === "run") return startTransferJob(session.csrf, body.id);
+      if (body.operation === "discard") return cancelTransferJob(session.csrf, body.id);
     }
     throw new Error("Invalid transfer request");
   } catch (error) {
